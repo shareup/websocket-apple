@@ -1,0 +1,34 @@
+{
+  "object": {
+    "pins": [
+      {
+        "package": "swift-nio",
+        "repositoryURL": "https://github.com/apple/swift-nio.git",
+        "state": {
+          "branch": null,
+          "revision": "8a865bd15e69526cbdfcfd7c47698eb20b2ba951",
+          "version": "2.19.0"
+        }
+      },
+      {
+        "package": "Synchronized",
+        "repositoryURL": "https://github.com/shareup/synchronized.git",
+        "state": {
+          "branch": null,
+          "revision": "5f3312cf35cde0ddd1196ca9c44190b1859426e0",
+          "version": "2.0.0"
+        }
+      },
+      {
+        "package": "WebSocketProtocol",
+        "repositoryURL": "https://github.com/shareup/websocket-protocol.git",
+        "state": {
+          "branch": null,
+          "revision": "9258e7cb458fc209d8e7f463201c99d1497fee45",
+          "version": "1.2.0"
+        }
+      }
+    ]
+  },
+  "version": 1
+}
