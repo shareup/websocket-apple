@@ -1,4 +1,4 @@
-	name: Swift
+name: Swift
 
 on:
   push:
@@ -17,3 +17,4 @@ jobs:
       run: swift build -v
     - name: Run tests
       run: swift test -v
+
