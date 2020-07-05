@@ -114,16 +114,15 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     public func close(_ closeCode:  WebSocketCloseCode) {
-        let webSocket: (URLSession, URLSessionWebSocketTask)? = sync {
-            guard let (session, task) = state.webSocketSessionAndTask else { return nil }
+        let webSocketTask: URLSessionWebSocketTask? = sync {
+            guard let (_, task) = state.webSocketSessionAndTask else { return nil }
             state = .closing
-            return (session, task)
+            return task
         }
 
-        guard let (session, task) = webSocket else { return }
+        guard let task = webSocketTask else { return }
         let code = URLSessionWebSocketTask.CloseCode(closeCode) ?? .invalid
         task.cancel(with: code, reason: nil)
-        session.invalidateAndCancel()
     }
 }
 
@@ -146,8 +145,8 @@ private extension WebSocket  {
                     return
                 }
 
-                assert(session == webSocketSession)
-                assert(task == webSocketTask)
+                assert(session === webSocketSession)
+                assert(task === webSocketTask)
 
                 self.state = .open(webSocketSession, webSocketTask, delegate)
             }
@@ -197,5 +196,11 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
                     reason: Data?) {
         self.onClose(session, webSocketTask, closeCode, reason)
+    }
+
+    func urlSession(_ session: URLSession,
+                    task: URLSessionTask,
+                    didCompleteWithError error: Error?) {
+        session.invalidateAndCancel()
     }
 }
