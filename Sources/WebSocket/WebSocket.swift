@@ -51,19 +51,13 @@ public final class WebSocket: WebSocketProtocol {
         return queue
     }()
 
-    public required init(url: URL) {
+    public init(url: URL) {
         self.url = url
         connect()
     }
 
     deinit {
         close()
-    }
-
-    public func receive<S: Subscriber>(subscriber: S)
-        where S.Input == Result<WebSocketMessage, Swift.Error>, S.Failure == Swift.Error
-    {
-        subject.receive(subscriber: subscriber)
     }
 
     private func connect() {
@@ -77,9 +71,15 @@ public final class WebSocket: WebSocketProtocol {
                 task.receive() { [weak self] in self?.receiveFromWebSocket($0) }
                 task.resume()
             default:
-                return
+                break
             }
         }
+    }
+
+    public func receive<S: Subscriber>(subscriber: S)
+        where S.Input == Result<WebSocketMessage, Swift.Error>, S.Failure == Swift.Error
+    {
+        subject.receive(subscriber: subscriber)
     }
 
     private func receiveFromWebSocket(_ result: Result<URLSessionWebSocketTask.Message, Error>) {
@@ -104,8 +104,6 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     private func send(_ message: URLSessionWebSocketTask.Message, completionHandler: @escaping (Error?) -> Void) {
-        // TODO: capture obj-c exceptions over in the WebSocket class
-
         sync {
             guard case .open(_, let task, _) = state else {
                 completionHandler(WebSocketError.notOpen)

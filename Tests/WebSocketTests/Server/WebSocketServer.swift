@@ -153,10 +153,10 @@ private class WebSocketHandler: ChannelInboundHandler {
     private func onText(context: ChannelHandlerContext, text: String) {
         guard let reply = replyProvider(text) else { return }
 
-        var buffer = context.channel.allocator.buffer(capacity: reply.utf8.count)
-        buffer.writeString(reply)
+        var replyBuffer = context.channel.allocator.buffer(capacity: reply.utf8.count)
+        replyBuffer.writeString(reply)
 
-        let frame = WebSocketFrame(fin: true, opcode: .text, data: buffer)
+        let frame = WebSocketFrame(fin: true, opcode: .text, data: replyBuffer)
 
         _ = context.channel.writeAndFlush(frame)
     }
