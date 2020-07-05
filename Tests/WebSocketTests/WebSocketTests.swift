@@ -16,8 +16,10 @@ class WebSocketTests: XCTestCase {
             )
             defer { sub.cancel() }
 
+            client.connect()
             waitForExpectations(timeout: 2)
-            
+
+            XCTAssertFalse(client.isOpen)
             XCTAssertTrue(client.isClosed)
         }
     }
@@ -36,6 +38,7 @@ class WebSocketTests: XCTestCase {
                     switch result {
                     case .success(.open):
                         XCTAssertTrue(client.isOpen)
+                        XCTAssertFalse(client.isClosed)
                         client.send(data)
                         openEx.fulfill()
                     case .failure:
@@ -47,8 +50,10 @@ class WebSocketTests: XCTestCase {
             )
             defer { sub.cancel() }
 
+            client.connect()
             waitForExpectations(timeout: 2)
 
+            XCTAssertFalse(client.isOpen)
             XCTAssertTrue(client.isClosed)
         }
     }
@@ -62,11 +67,12 @@ class WebSocketTests: XCTestCase {
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(message, completionHandler: completion) },
-                    .string(message): { client.close() }
+                    .text(message): { client.close() }
                 ])
             )
             defer { sub.cancel() }
 
+            client.connect()
             waitForExpectations(timeout: 2)
         }
     }
@@ -81,11 +87,12 @@ class WebSocketTests: XCTestCase {
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(binary, completionHandler: completion) },
-                    .string(message): { client.close() }
+                    .text(message): { client.close() }
                 ])
             )
             defer { sub.cancel() }
 
+            client.connect()
             waitForExpectations(timeout: 2)
         }
     }
@@ -108,13 +115,14 @@ class WebSocketTests: XCTestCase {
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(joinPush, completionHandler: joinCompletion) },
-                    .string(joinReply): { client.send(echoPush1, completionHandler: echo1Completion) },
-                    .string(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion) },
-                    .string(echoReply2): { client.close() },
+                    .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion) },
+                    .text(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion) },
+                    .text(echoReply2): { client.close() },
                 ])
             )
             defer { sub.cancel() }
 
+            client.connect()
             waitForExpectations(timeout: 2)
         }
     }

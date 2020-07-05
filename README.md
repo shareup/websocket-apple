@@ -25,6 +25,8 @@ let sub = socket.sink(
 	}
 )
 defer { sub.cancel() }
+
+socket.connect()
 ```
 
 ## Tests

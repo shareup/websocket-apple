@@ -7,10 +7,10 @@ extension WebSocketMessage {
         case .data(let data):
             self = .data(data)
         case .string(let string):
-            self = .string(string)
+            self = .text(string)
         @unknown default:
             assertionFailure("Unknown WebSocket Message type")
-            self = .string("")
+            self = .text("")
         }
     }
 }

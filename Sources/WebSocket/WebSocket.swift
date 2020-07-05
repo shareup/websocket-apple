@@ -53,14 +53,13 @@ public final class WebSocket: WebSocketProtocol {
 
     public init(url: URL) {
         self.url = url
-        connect()
     }
 
     deinit {
         close()
     }
 
-    private func connect() {
+    public func connect() {
         sync {
             switch (state) {
             case .closed, .unopened:
@@ -114,12 +113,7 @@ public final class WebSocket: WebSocketProtocol {
         }
     }
 
-    public func close() {
-        close(.goingAway)
-    }
-
-    // TODO: make a list of close codes to expose publicly instead of depending on URLSessionWebSocketTask.CloseCode
-    func close(_ closeCode:  URLSessionWebSocketTask.CloseCode) {
+    public func close(_ closeCode:  WebSocketCloseCode) {
         let webSocket: (URLSession, URLSessionWebSocketTask)? = sync {
             guard let (session, task) = state.webSocketSessionAndTask else { return nil }
             state = .closing
@@ -127,7 +121,8 @@ public final class WebSocket: WebSocketProtocol {
         }
 
         guard let (session, task) = webSocket else { return }
-        task.cancel(with: closeCode, reason: nil)
+        let code = URLSessionWebSocketTask.CloseCode(closeCode) ?? .invalid
+        task.cancel(with: code, reason: nil)
         session.invalidateAndCancel()
     }
 }
