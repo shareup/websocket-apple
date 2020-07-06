@@ -63,7 +63,7 @@ public final class WebSocket: WebSocketProtocol {
         sync {
             switch (state) {
             case .closed, .unopened:
-                let delegate = WebSocketDelegate(onOpen: onOpen, onClose: onClose)
+                let delegate = WebSocketDelegate(onOpen: onOpen, onClose: onClose, onCompletion: onCompletion)
                 let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: delegateQueue)
                 let task = session.webSocketTask(with: url)
                 state = .connecting(session, task, delegate)
@@ -128,6 +128,7 @@ public final class WebSocket: WebSocketProtocol {
 
 private typealias OnOpenHandler = (URLSession, URLSessionWebSocketTask, String?) -> Void
 private typealias OnCloseHandler = (URLSession, URLSessionWebSocketTask, URLSessionWebSocketTask.CloseCode, Data?) -> Void
+private typealias OnCompletionHandler = (URLSession, URLSessionTask, Error?) -> Void
 
 private let normalCloseCodes: [URLSessionWebSocketTask.CloseCode] = [.goingAway, .normalClosure]
 
@@ -171,6 +172,12 @@ private extension WebSocket  {
             }
         }
     }
+
+    var onCompletion: OnCompletionHandler {
+        return { (webSocketSession, webSocketTask, error) in
+            webSocketSession.invalidateAndCancel()
+        }
+    }
 }
 
 // MARK: URLSessionWebSocketDelegate
@@ -178,10 +185,15 @@ private extension WebSocket  {
 private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     private let onOpen: OnOpenHandler
     private let onClose: OnCloseHandler
+    private let onCompletion: OnCompletionHandler
 
-    init(onOpen: @escaping OnOpenHandler, onClose: @escaping OnCloseHandler) {
+    init(onOpen: @escaping OnOpenHandler,
+         onClose: @escaping OnCloseHandler,
+         onCompletion: @escaping OnCompletionHandler)
+    {
         self.onOpen = onOpen
         self.onClose = onClose
+        self.onCompletion = onCompletion
         super.init()
     }
 
@@ -201,6 +213,6 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
     func urlSession(_ session: URLSession,
                     task: URLSessionTask,
                     didCompleteWithError error: Error?) {
-        session.invalidateAndCancel()
+        self.onCompletion(session, task, error)
     }
 }
