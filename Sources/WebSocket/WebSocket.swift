@@ -42,12 +42,22 @@ public final class WebSocket: WebSocketProtocol {
     private var state: State = .unopened
     private let subject = PassthroughSubject<Output, Failure>()
 
-    private let serialQueue: DispatchQueue = DispatchQueue(label: "WebSocket.serialQueue")
+    // Deliver messages to the subscribers on a separate thread because it's a bad idea
+    // to let the subscribers, who could potentially be doing long-running tasks with the
+    // data we send them, block our network thread. However, there's no need to create a
+    // special thread for this purpose.
+    private let subjectQueue = DispatchQueue(
+        label: "WebSocket.subjectQueue",
+        attributes: [],
+        target: DispatchQueue.global(qos: .default)
+    )
+
+    private let webSocketQueue: DispatchQueue = DispatchQueue(label: "WebSocket.webSocketQueue")
     private lazy var delegateQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "WebSocket.delegateQueue"
         queue.maxConcurrentOperationCount = 1
-        queue.underlyingQueue = serialQueue
+        queue.underlyingQueue = webSocketQueue
         return queue
     }()
 
@@ -67,8 +77,8 @@ public final class WebSocket: WebSocketProtocol {
                 let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: delegateQueue)
                 let task = session.webSocketTask(with: url)
                 state = .connecting(session, task, delegate)
-                task.receive() { [weak self] in self?.receiveFromWebSocket($0) }
                 task.resume()
+                receiveFromWebSocket()
             default:
                 break
             }
@@ -81,15 +91,20 @@ public final class WebSocket: WebSocketProtocol {
         subject.receive(subscriber: subscriber)
     }
 
-    private func receiveFromWebSocket(_ result: Result<URLSessionWebSocketTask.Message, Error>) {
-        let _result = result.map { WebSocketMessage($0) }
+    private func receiveFromWebSocket() {
+        webSocketQueue.async {
+            let task: URLSessionWebSocketTask? = self.sync {
+                let webSocketTask = self.state.webSocketSessionAndTask?.1
+                guard let task = webSocketTask, case .running = task.state else { return nil }
+                return task
+            }
 
-        subject.send(_result)
+            task?.receive { [weak self] (result: Result<URLSessionWebSocketTask.Message, Error>) in
+                guard let self = self else { return }
+                let _result = result.map { WebSocketMessage($0) }
 
-        sync {
-            if case .open(_, let task, _) = state,
-                case .running = task.state {
-                task.receive() { [weak self] in self?.receiveFromWebSocket($0) }
+                self.subjectQueue.async { [weak self] in self?.subject.send(_result) }
+                self.receiveFromWebSocket()
             }
         }
     }
@@ -103,26 +118,28 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     private func send(_ message: URLSessionWebSocketTask.Message, completionHandler: @escaping (Error?) -> Void) {
-        sync {
+        let task: URLSessionWebSocketTask? = sync {
             guard case .open(_, let task, _) = state else {
                 completionHandler(WebSocketError.notOpen)
-                return
+                return nil
             }
-
-            task.send(message, completionHandler: completionHandler)
-        }
-    }
-
-    public func close(_ closeCode:  WebSocketCloseCode) {
-        let webSocketTask: URLSessionWebSocketTask? = sync {
-            guard let (_, task) = state.webSocketSessionAndTask else { return nil }
-            state = .closing
             return task
         }
 
-        guard let task = webSocketTask else { return }
-        let code = URLSessionWebSocketTask.CloseCode(closeCode) ?? .invalid
-        task.cancel(with: code, reason: nil)
+        webSocketQueue.async { task?.send(message, completionHandler: completionHandler) }
+    }
+
+    public func close(_ closeCode:  WebSocketCloseCode) {
+        let task: URLSessionWebSocketTask? = self.sync {
+            guard let (_, task) = self.state.webSocketSessionAndTask else { return nil }
+            self.state = .closing
+            return task
+        }
+
+        webSocketQueue.async {
+            let code = URLSessionWebSocketTask.CloseCode(closeCode) ?? .invalid
+            task?.cancel(with: code, reason: nil)
+        }
     }
 }
 
@@ -152,7 +169,7 @@ private extension WebSocket  {
                 self.state = .open(webSocketSession, webSocketTask, delegate)
             }
 
-            self.subject.send(.success(.open))
+            self.subjectQueue.async { [weak self] in self?.subject.send(.success(.open)) }
         }
     }
 
@@ -165,10 +182,12 @@ private extension WebSocket  {
                 self.state = .closed(WebSocketError.closed(closeCode, reason))
             }
 
-            if normalCloseCodes.contains(closeCode) {
-                self.subject.send(completion: .finished)
-            } else {
-                self.subject.send(completion: .failure(WebSocketError.closed(closeCode, reason)))
+            self.subjectQueue.async { [weak self] in
+                if normalCloseCodes.contains(closeCode) {
+                    self?.subject.send(completion: .finished)
+                } else {
+                    self?.subject.send(completion: .failure(WebSocketError.closed(closeCode, reason)))
+                }
             }
         }
     }
