@@ -42,12 +42,22 @@ public final class WebSocket: WebSocketProtocol {
     private var state: State = .unopened
     private let subject = PassthroughSubject<Output, Failure>()
 
-    private let serialQueue: DispatchQueue = DispatchQueue(label: "WebSocket.serialQueue")
+    // Deliver messages to the subscribers on a separate thread because it's a bad idea
+    // to let the subscribers, who could potentially be doing long-running tasks with the
+    // data we send them, block our network thread. However, there's no need to create a
+    // special thread for this purpose.
+    private let subjectQueue = DispatchQueue(
+        label: "WebSocket.subjectQueue",
+        attributes: [],
+        target: DispatchQueue.global(qos: .default)
+    )
+
+    private let webSocketQueue: DispatchQueue = DispatchQueue(label: "WebSocket.webSocketQueue")
     private lazy var delegateQueue: OperationQueue = {
         let queue = OperationQueue()
         queue.name = "WebSocket.delegateQueue"
         queue.maxConcurrentOperationCount = 1
-        queue.underlyingQueue = serialQueue
+        queue.underlyingQueue = webSocketQueue
         return queue
     }()
 
@@ -82,7 +92,7 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     private func receiveFromWebSocket() {
-        serialQueue.async {
+        webSocketQueue.async {
             let task: URLSessionWebSocketTask? = self.sync {
                 let webSocketTask = self.state.webSocketSessionAndTask?.1
                 guard let task = webSocketTask, case .running = task.state else { return nil }
@@ -93,7 +103,7 @@ public final class WebSocket: WebSocketProtocol {
                 guard let self = self else { return }
                 let _result = result.map { WebSocketMessage($0) }
 
-                self.subject.send(_result)
+                self.subjectQueue.async { [weak self] in self?.subject.send(_result) }
                 self.receiveFromWebSocket()
             }
         }
@@ -116,7 +126,7 @@ public final class WebSocket: WebSocketProtocol {
             return task
         }
 
-        serialQueue.async { task?.send(message, completionHandler: completionHandler) }
+        webSocketQueue.async { task?.send(message, completionHandler: completionHandler) }
     }
 
     public func close(_ closeCode:  WebSocketCloseCode) {
@@ -126,7 +136,7 @@ public final class WebSocket: WebSocketProtocol {
             return task
         }
 
-        serialQueue.async {
+        webSocketQueue.async {
             let code = URLSessionWebSocketTask.CloseCode(closeCode) ?? .invalid
             task?.cancel(with: code, reason: nil)
         }
@@ -159,7 +169,7 @@ private extension WebSocket  {
                 self.state = .open(webSocketSession, webSocketTask, delegate)
             }
 
-            self.subject.send(.success(.open))
+            self.subjectQueue.async { [weak self] in self?.subject.send(.success(.open)) }
         }
     }
 
@@ -172,10 +182,12 @@ private extension WebSocket  {
                 self.state = .closed(WebSocketError.closed(closeCode, reason))
             }
 
-            if normalCloseCodes.contains(closeCode) {
-                self.subject.send(completion: .finished)
-            } else {
-                self.subject.send(completion: .failure(WebSocketError.closed(closeCode, reason)))
+            self.subjectQueue.async { [weak self] in
+                if normalCloseCodes.contains(closeCode) {
+                    self?.subject.send(completion: .finished)
+                } else {
+                    self?.subject.send(completion: .failure(WebSocketError.closed(closeCode, reason)))
+                }
             }
         }
     }
