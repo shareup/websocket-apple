@@ -3,7 +3,7 @@ import Foundation
 import Synchronized
 import WebSocketProtocol
 
-public final class WebSocket: WebSocketProtocol {
+public final class WebSocket: WebSocketProtocol, Identifiable {
     public typealias Output = Result<WebSocketMessage, Swift.Error>
     public typealias Failure = Swift.Error
 
@@ -23,6 +23,8 @@ public final class WebSocket: WebSocketProtocol {
             }
         }
     }
+    
+    public let id: String = UUID().uuidString
 
     public var isOpen: Bool { sync {
         guard case .open = state else { return false }
@@ -42,9 +44,9 @@ public final class WebSocket: WebSocketProtocol {
     private var state: State = .unopened
     private let subject = PassthroughSubject<Output, Failure>()
 
-    // Deliver messages to the subscribers on a separate thread because it's a bad idea
+    // Deliver messages to the subscribers on a separate queue because it's a bad idea
     // to let the subscribers, who could potentially be doing long-running tasks with the
-    // data we send them, block our network thread. However, there's no need to create a
+    // data we send them, block our network queue. However, there's no need to create a
     // special thread for this purpose.
     private let subjectQueue = DispatchQueue(
         label: "WebSocket.subjectQueue",
