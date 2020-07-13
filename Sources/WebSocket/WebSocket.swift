@@ -175,7 +175,7 @@ private extension WebSocket {
             case .open(let conn):
                 return conn
             default:
-                Swift.print("Unexpected message: \(String(data: data, encoding: .utf8) ?? "")")
+                Swift.print("Unexpected message while '\(state)': \(String(data: data, encoding: .utf8) ?? "")")
                 return nil
             }
         }
