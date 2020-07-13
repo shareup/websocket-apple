@@ -7,7 +7,7 @@ private var ports = (50000...52000).map { UInt16($0) }
 
 class WebSocketTests: XCTestCase {
     func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
-    
+
     func testWebSocketHasUniqueID() throws {
         let first = WebSocket(url: url(ports.removeFirst()))
         let second = WebSocket(url: url(ports.removeFirst()))
