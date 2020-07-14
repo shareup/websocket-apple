@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/shareup/websocket-protocol.git",
         "state": {
           "branch": null,
-          "revision": "607dad12e8cc26575cab8d188d401a9b5520c051",
-          "version": "2.1.0"
+          "revision": "87f7173b21dc877e04211ef25bf1327d3c3b5982",
+          "version": "2.1.1"
         }
       }
     ]
