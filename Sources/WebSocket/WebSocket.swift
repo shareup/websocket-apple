@@ -50,13 +50,13 @@ public final class WebSocket: WebSocketProtocol, Identifiable {
     // data we send them, block our network queue. However, there's no need to create a
     // special thread for this purpose.
     private let subjectQueue = DispatchQueue(
-        label: "com.shareup.WebSocket.subjectQueue",
+        label: "app.shareup.WebSocket.subjectQueue",
         attributes: [],
         target: DispatchQueue.global(qos: .default)
     )
 
     private let webSocketQueue: DispatchQueue =
-        DispatchQueue(label: "com.shareup.WebSocket.webSocketQueue")
+        DispatchQueue(label: "app.shareup.WebSocket.webSocketQueue")
 
     public init(url: URL) {
         self.url = url
