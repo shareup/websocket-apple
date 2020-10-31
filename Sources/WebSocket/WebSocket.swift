@@ -24,6 +24,15 @@ public final class WebSocket: WebSocketProtocol {
         }
     }
 
+    /// The maximum number of bytes to buffer before the receive call fails with an error.
+    /// Default: 1 MiB
+    public var maximumMessageSize: Int = 1024 * 1024 {
+        didSet { sync {
+            guard let (_, task) = state.webSocketSessionAndTask else { return }
+            task.maximumMessageSize = maximumMessageSize
+        } }
+    }
+
     public var isOpen: Bool { sync {
         guard case .open = state else { return false }
         return true
@@ -76,6 +85,7 @@ public final class WebSocket: WebSocketProtocol {
                 let delegate = WebSocketDelegate(onOpen: onOpen, onClose: onClose, onCompletion: onCompletion)
                 let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: delegateQueue)
                 let task = session.webSocketTask(with: url)
+                task.maximumMessageSize = maximumMessageSize
                 state = .connecting(session, task, delegate)
                 task.resume()
                 receiveFromWebSocket()

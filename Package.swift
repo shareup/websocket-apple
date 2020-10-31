@@ -12,8 +12,8 @@ let package = Package(
             targets: ["WebSocket"]),
     ],
     dependencies: [
-        .package(name: "Synchronized", url: "https://github.com/shareup/synchronized.git", from: "2.0.0"),
-        .package(name: "WebSocketProtocol", url: "https://github.com/shareup/websocket-protocol.git", from: "2.0.0"),
+        .package(name: "Synchronized", url: "https://github.com/shareup/synchronized.git", from: "2.1.0"),
+        .package(name: "WebSocketProtocol", url: "https://github.com/shareup/websocket-protocol.git", from: "2.2.0"),
         .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
     ],
     targets: [

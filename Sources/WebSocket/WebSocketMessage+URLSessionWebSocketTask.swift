@@ -5,7 +5,7 @@ extension WebSocketMessage {
     init(_ message: URLSessionWebSocketTask.Message) {
         switch message {
         case .data(let data):
-            self = .data(data)
+            self = .binary(data)
         case .string(let string):
             self = .text(string)
         @unknown default:
