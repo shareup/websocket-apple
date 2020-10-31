@@ -27,6 +27,14 @@ public final class WebSocket: WebSocketProtocol, Identifiable {
     
     public let id: String = UUID().uuidString
 
+    /// The maximum number of bytes to buffer before the receive call fails with an error.
+    /// Default: 1 MiB
+    public var maximumMessageSize: Int = 1024 * 1024 {
+        didSet {
+            // TODO: How can we enforce this limit?
+        }
+    }
+
     public var isOpen: Bool { sync {
         guard case .open = state else { return false }
         return true
@@ -184,7 +192,7 @@ private extension WebSocket {
 
         switch context.websocketMessageType {
         case .binary:
-            subjectQueue.async { [weak self] in self?.subject.send(.success(.data(data))) }
+            subjectQueue.async { [weak self] in self?.subject.send(.success(.binary(data))) }
         case .text:
             guard let text = String(data: data, encoding: .utf8) else {
                 close(.unsupportedData)
