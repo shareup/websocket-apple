@@ -204,7 +204,25 @@ private extension WebSocket  {
 
     var onCompletion: OnCompletionHandler {
         return { (webSocketSession, webSocketTask, error) in
-            webSocketSession.invalidateAndCancel()
+            defer { webSocketSession.invalidateAndCancel() }
+
+            // "The only errors your delegate receives through the error parameter
+            // are client-side errors, such as being unable to resolve the hostname
+            // or connect to the host."
+            //
+            // https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession
+            //
+            // When receiving these errors, `onClose` is not called because the connection
+            // was never actually opened.
+            guard let error = error else { return }
+            self.sync {
+                if case .closed = self.state { return }
+                self.state = .closed(.notOpen)
+
+                self.subjectQueue.async { [weak self] in
+                    self?.subject.send(completion: .failure(error))
+                }
+            }
         }
     }
 }

@@ -23,12 +23,6 @@ final class WebSocketServer {
         self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
-    func listenAndWait() {
-        listen()
-        do { try serverChannel?.closeFuture.wait() }
-        catch { print("Failed to wait on server: \(error)") }
-    }
-
     func listen() {
         do {
             var addr = sockaddr_in()
@@ -49,6 +43,11 @@ final class WebSocketServer {
         catch {
             print("Failed to start server: \(String(describing: error))")
         }
+    }
+
+    func close() {
+        do { try serverChannel?.close().wait() }
+        catch { print("Failed to wait on server: \(error)") }
     }
 
     private func shouldUpgrade(channel: Channel, head: HTTPRequestHead) -> EventLoopFuture<HTTPHeaders?> {

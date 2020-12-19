@@ -24,6 +24,33 @@ class WebSocketTests: XCTestCase {
         }
     }
 
+    func testCompleteWhenServerIsUnreachable() throws {
+        try withServer { (server, client) in
+            server.close()
+
+            let errorEx = self.expectation(description: "Should have received error")
+            let sub = client.sink(
+                receiveCompletion: expectFailure(),
+                receiveValue: { result in
+                    switch result {
+                    case let .failure(error as NSError):
+                        XCTAssertEqual("NSURLErrorDomain", error.domain)
+                        XCTAssertEqual(-1004, error.code)
+                        errorEx.fulfill()
+                    case let .success(message):
+                        XCTFail("Should not have received message: \(message)")
+                    }
+                }
+            )
+            defer { sub.cancel() }
+
+            client.connect()
+            waitForExpectations(timeout: 2)
+
+            XCTAssertTrue(client.isClosed)
+        }
+    }
+
     func testCompleteWhenRemoteCloses() throws {
         try withServer { (server, client) in
             var invalidUTF8Bytes = [0x192, 0x193] as [UInt16]
