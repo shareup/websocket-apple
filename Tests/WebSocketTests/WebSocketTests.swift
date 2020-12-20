@@ -212,8 +212,8 @@ private extension WebSocketTests {
 
     func withReplyServer(
         _ replies: Array<String?>,
-        _ block: (WebSocketServer, WebSocket
-        ) throws -> Void) throws {
+        _ block: (WebSocketServer, WebSocket) throws -> Void
+    ) throws {
         let port = ports.removeFirst()
         var replies = replies
         let provider: () -> String? = { return replies.removeFirst() }
