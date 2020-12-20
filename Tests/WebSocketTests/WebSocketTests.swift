@@ -153,6 +153,46 @@ class WebSocketTests: XCTestCase {
             waitForExpectations(timeout: 2)
         }
     }
+
+    func testCanSendFromTwoThreadsSimultaneously() throws {
+        let queueCount = 8
+        let queues = (0..<queueCount).map { DispatchQueue(label: "\($0)") }
+
+        let messageCount = 100
+        let sendMessages: (WebSocket) -> Void = { client in
+            (0..<messageCount).forEach { messageIndex in
+                (0..<queueCount).forEach { queueIndex in
+                    queues[queueIndex].async { client.send("\(queueIndex)-\(messageIndex)") }
+                }
+            }
+        }
+
+        let receiveMessageEx = expectation(
+            description: "Should have received \(queueCount * messageCount) messages"
+        )
+        receiveMessageEx.expectedFulfillmentCount = queueCount * messageCount
+
+        try withEchoServer { (server, client) in
+            let sub = client.sink(
+                receiveCompletion: {_ in },
+                receiveValue: { message in
+                    switch message {
+                    case .success(.open):
+                        sendMessages(client)
+                    case .success(.text):
+                        receiveMessageEx.fulfill()
+                    default:
+                        XCTFail()
+                    }
+                }
+            )
+            defer { sub.cancel() }
+
+            client.connect()
+            waitForExpectations(timeout: 10)
+            client.close()
+        }
+    }
 }
 
 private extension WebSocketTests {
@@ -170,7 +210,10 @@ private extension WebSocketTests {
         try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
     }
 
-    func withReplyServer(_ replies: Array<String?>, _ block: (WebSocketServer, WebSocket) throws -> Void) throws {
+    func withReplyServer(
+        _ replies: Array<String?>,
+        _ block: (WebSocketServer, WebSocket) throws -> Void
+    ) throws {
         let port = ports.removeFirst()
         var replies = replies
         let provider: () -> String? = { return replies.removeFirst() }
