@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import os.log
 import Synchronized
 import WebSocketProtocol
 
@@ -7,7 +8,7 @@ public final class WebSocket: WebSocketProtocol {
     public typealias Output = Result<WebSocketMessage, Swift.Error>
     public typealias Failure = Swift.Error
 
-    private enum State {
+    private enum State: CustomDebugStringConvertible {
         case unopened
         case connecting(URLSession, URLSessionWebSocketTask, WebSocketDelegate)
         case open(URLSession, URLSessionWebSocketTask, WebSocketDelegate)
@@ -20,6 +21,16 @@ public final class WebSocket: WebSocketProtocol {
                 return (session, task)
             case .unopened, .closing, .closed:
                 return nil
+            }
+        }
+
+        var debugDescription: String {
+            switch self {
+            case .unopened: return "unopened"
+            case .connecting: return "connecting"
+            case .open: return "open"
+            case .closing: return "closing"
+            case .closed: return "closed"
             }
         }
     }
@@ -73,6 +84,13 @@ public final class WebSocket: WebSocketProtocol {
 
     public func connect() {
         sync {
+            os_log(
+                "connect: oldstate=%{public}@",
+                log: .webSocket,
+                type: .debug,
+                state.debugDescription
+            )
+
             switch (state) {
             case .closed, .unopened:
                 let delegate = WebSocketDelegate(
@@ -109,23 +127,40 @@ public final class WebSocket: WebSocketProtocol {
             return task
         }
 
-        task?.receive { [weak self] (result: Result<URLSessionWebSocketTask.Message, Error>) in
-            guard let self = self else { return }
-            let _result = result.map { WebSocketMessage($0) }
+        task?.receive
+            { [weak self, weak task] (result: Result<URLSessionWebSocketTask.Message, Error>) in
+                guard let self = self else { return }
 
-            self.subjectQueue.async { [weak self] in self?.subject.send(_result) }
-            self.receiveFromWebSocket()
-        }
+                let _result = result.map { WebSocketMessage($0) }
+
+                guard task?.state == .running
+                else {
+                    os_log(
+                        "receive message in incorrect task state: message=%s taskstate=%{public}@",
+                        log: .webSocket,
+                        type: .debug,
+                        _result.debugDescription,
+                        "\(task?.state.rawValue ?? -1)"
+                    )
+                    return
+                }
+
+                os_log("receive: %s", log: .webSocket, type: .debug, _result.debugDescription)
+                self.subjectQueue.async { [weak self] in self?.subject.send(_result) }
+                self.receiveFromWebSocket()
+            }
     }
 
     public func send(
         _ string: String,
         completionHandler: @escaping (Error?) -> Void = { _ in }
     ) {
+        os_log("send: %s", log: .webSocket, type: .debug, string)
         send(.string(string), completionHandler: completionHandler)
     }
 
     public func send(_ data: Data, completionHandler: @escaping (Error?) -> Void = { _ in }) {
+        os_log("send: %lld bytes", log: .webSocket, type: .debug, data.count)
         send(.data(data), completionHandler: completionHandler)
     }
 
@@ -134,7 +169,15 @@ public final class WebSocket: WebSocketProtocol {
         completionHandler: @escaping (Error?) -> Void
     ) {
         let task: URLSessionWebSocketTask? = sync {
-            guard case .open(_, let task, _) = state else {
+            guard case .open(_, let task, _) = state, task.state == .running
+            else {
+                os_log(
+                    "send message in incorrect task state: message=%s taskstate=%{public}@",
+                    log: .webSocket,
+                    type: .debug,
+                    message.debugDescription,
+                    "\(self.state.webSocketSessionAndTask?.1.state.rawValue ?? -1)"
+                )
                 completionHandler(WebSocketError.notOpen)
                 return nil
             }
@@ -146,8 +189,17 @@ public final class WebSocket: WebSocketProtocol {
 
     public func close(_ closeCode:  WebSocketCloseCode) {
         let task: URLSessionWebSocketTask? = self.sync {
-            guard let (_, task) = self.state.webSocketSessionAndTask else { return nil }
-            self.state = .closing
+            os_log(
+                "close: oldstate=%{public}@ code=%lld",
+                log: .webSocket,
+                type: .debug,
+                state.debugDescription,
+                closeCode.rawValue
+            )
+
+            guard let (_, task) = state.webSocketSessionAndTask, task.state == .running
+            else { return nil }
+            state = .closing
             return task
         }
 
@@ -170,9 +222,25 @@ private extension WebSocket  {
             guard let self = self else { return }
 
             self.sync {
+                os_log(
+                    "onOpen: oldstate=%{public}@",
+                    log: .webSocket,
+                    type: .debug,
+                    self.state.debugDescription
+                )
+
                 guard case let .connecting(session, task, delegate) = self.state else {
-                    assertionFailure("Should not have received `didOpenWithProtocol` while in '\(self.state)'")
-                    self.state = .open(webSocketSession, webSocketTask, webSocketSession.delegate as! WebSocketDelegate)
+                    os_log(
+                        "receive onOpen callback in incorrect state: oldstate=%{public}@",
+                        log: .webSocket,
+                        type: .error,
+                        self.state.debugDescription
+                    )
+                    self.state = .open(
+                        webSocketSession,
+                        webSocketTask,
+                        webSocketSession.delegate as! WebSocketDelegate
+                    )
                     return
                 }
 
@@ -191,23 +259,36 @@ private extension WebSocket  {
             guard let self = self else { return }
 
             self.sync {
-                if case .closed = self.state { return } // Apple will double close or I would do an assertion failure...
-                self.state = .closed(WebSocketError.closed(closeCode, reason))
-            }
+                os_log(
+                    "onClose: oldstate=%{public}@ code=%lld",
+                    log: .webSocket,
+                    type: .debug,
+                    self.state.debugDescription,
+                    closeCode.rawValue
+                )
 
-            self.subjectQueue.async { [weak self] in
-                if normalCloseCodes.contains(closeCode) {
-                    self?.subject.send(completion: .finished)
-                } else {
-                    self?.subject.send(completion: .failure(WebSocketError.closed(closeCode, reason)))
+                if case .closed = self.state { return }
+                self.state = .closed(WebSocketError.closed(closeCode, reason))
+
+                self.subjectQueue.async { [weak self] in
+                    if normalCloseCodes.contains(closeCode) {
+                        self?.subject.send(completion: .finished)
+                    } else {
+                        self?.subject.send(
+                            completion: .failure(WebSocketError.closed(closeCode, reason))
+                        )
+                    }
                 }
             }
         }
     }
 
     var onCompletion: OnCompletionHandler {
-        return { (webSocketSession, webSocketTask, error) in
+        return { [weak self] (webSocketSession, webSocketTask, error) in
             defer { webSocketSession.invalidateAndCancel() }
+            guard let self = self else { return }
+            
+            os_log("onCompletion", log: .webSocket, type: .debug)
 
             // "The only errors your delegate receives through the error parameter
             // are client-side errors, such as being unable to resolve the hostname
@@ -219,6 +300,14 @@ private extension WebSocket  {
             // was never actually opened.
             guard let error = error else { return }
             self.sync {
+                os_log(
+                    "onCompletion: oldstate=%{public}@ error=%@",
+                    log: .webSocket,
+                    type: .debug,
+                    self.state.debugDescription,
+                    error.localizedDescription
+                )
+
                 if case .closed = self.state { return }
                 self.state = .closed(.notOpen)
 

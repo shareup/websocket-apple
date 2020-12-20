@@ -14,3 +14,14 @@ extension WebSocketMessage {
         }
     }
 }
+
+extension Result: CustomDebugStringConvertible where Success == WebSocketMessage {
+    public var debugDescription: String {
+        switch self {
+        case let .success(message):
+            return message.debugDescription
+        case let .failure(error):
+            return error.localizedDescription
+        }
+    }
+}

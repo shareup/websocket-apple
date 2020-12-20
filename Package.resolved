@@ -6,8 +6,8 @@
         "repositoryURL": "https://github.com/apple/swift-nio.git",
         "state": {
           "branch": null,
-          "revision": "8a865bd15e69526cbdfcfd7c47698eb20b2ba951",
-          "version": "2.19.0"
+          "revision": "43931b7a7daf8120a487601530c8bc03ce711992",
+          "version": "2.25.1"
         }
       },
       {
@@ -24,8 +24,8 @@
         "repositoryURL": "https://github.com/shareup/websocket-protocol.git",
         "state": {
           "branch": null,
-          "revision": "e3cc3105c75d070e0e6cd82568036b67a103ff5a",
-          "version": "2.2.0"
+          "revision": "bd6257e3c4b23484dfc73c550b025f96c8e151f6",
+          "version": "2.3.1"
         }
       }
     ]
