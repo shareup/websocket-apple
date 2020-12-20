@@ -221,20 +221,6 @@ private extension WebSocketTests {
         let client = WebSocket(url: url(port))
         try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
     }
-
-    func withDelayServer(
-        delay: TimeInterval,
-        _ block: (WebSocketServer, WebSocket) throws -> Void
-    ) throws {
-        let port = ports.removeFirst()
-        let provider: (String) -> String? = { (input) -> String? in
-            Thread.sleep(forTimeInterval: delay)
-            return input
-        }
-        let server = WebSocketServer(port: port, replyProvider: .matchReply(provider))
-        let client = WebSocket(url: url(port))
-        try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
-    }
 }
 
 private extension WebSocketTests {
@@ -282,7 +268,6 @@ private extension WebSocketTests {
     func expectNoError() -> (Error?) -> Void {
         let expectation = self.expectation(description: "Should not have had an error")
         return { error in
-            print(#function)
             XCTAssertNil(error)
             expectation.fulfill()
         }
