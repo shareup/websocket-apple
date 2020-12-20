@@ -62,6 +62,7 @@ public final class WebSocket: WebSocketProtocol {
         self.subjectQueue = DispatchQueue(
             label: "app.shareup.websocket.subjectqueue",
             attributes: [],
+            autoreleaseFrequency: .workItem,
             target: publisherQueue
         )
     }
