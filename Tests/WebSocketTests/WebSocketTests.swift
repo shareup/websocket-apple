@@ -28,15 +28,14 @@ class WebSocketTests: XCTestCase {
         try withServer { (server, client) in
             server.close()
 
-            let errorEx = self.expectation(description: "Should have received error")
             let sub = client.sink(
                 receiveCompletion: expectFailure(),
                 receiveValue: { result in
                     switch result {
-                    case let .failure(error as NSError):
-                        XCTAssertEqual("NSURLErrorDomain", error.domain)
-                        XCTAssertEqual(-1004, error.code)
-                        errorEx.fulfill()
+                    case .failure:
+                        // It's possible to receive or not receive an error.
+                        // Clients need to be resilient in the face of this reality.
+                        break
                     case let .success(message):
                         XCTFail("Should not have received message: \(message)")
                     }
@@ -45,7 +44,7 @@ class WebSocketTests: XCTestCase {
             defer { sub.cancel() }
 
             client.connect()
-            waitForExpectations(timeout: 2)
+            waitForExpectations(timeout: 0.2)
 
             XCTAssertTrue(client.isClosed)
         }
@@ -58,7 +57,8 @@ class WebSocketTests: XCTestCase {
             let data = Data(bytes: bytes, count: bytes.count)
 
             let openEx = self.expectation(description: "Should have opened")
-            let errorEx = self.expectation(description: "Should have errored")
+            let errorEx = self.expectation(description: "Should have erred")
+
             let sub = client.sink(
                 receiveCompletion: expectFailure(),
                 receiveValue: { result in
@@ -68,7 +68,9 @@ class WebSocketTests: XCTestCase {
                         XCTAssertFalse(client.isClosed)
                         client.send(data)
                         openEx.fulfill()
-                    case .failure:
+                    case let .failure(error as NSError):
+                        XCTAssertEqual("NSPOSIXErrorDomain", error.domain)
+                        XCTAssertEqual(57, error.code)
                         errorEx.fulfill()
                     default:
                         break
