@@ -59,17 +59,27 @@ public final class WebSocket: WebSocketProtocol {
 
     private let url: URL
 
+    private let timeoutIntervalForRequest: TimeInterval
+    private let timeoutIntervalForResource: TimeInterval
+
     private var state: State = .unopened
     private let subject = PassthroughSubject<Output, Failure>()
 
     private let subjectQueue: DispatchQueue
 
     public convenience init(url: URL) {
-        self.init(url: url, publisherQueue: nil)
+        self.init(url: url, publisherQueue: DispatchQueue.global())
     }
 
-    public init(url: URL, publisherQueue: DispatchQueue?) {
+    public init(
+        url: URL,
+        timeoutIntervalForRequest: TimeInterval = 60, // 60 seconds
+        timeoutIntervalForResource: TimeInterval = 604_800, // 7 days
+        publisherQueue: DispatchQueue = DispatchQueue.global()
+    ) {
         self.url = url
+        self.timeoutIntervalForRequest = timeoutIntervalForRequest
+        self.timeoutIntervalForResource = timeoutIntervalForResource
         self.subjectQueue = DispatchQueue(
             label: "app.shareup.websocket.subjectqueue",
             attributes: [],
@@ -98,16 +108,23 @@ public final class WebSocket: WebSocketProtocol {
                     onClose: onClose,
                     onCompletion: onCompletion
                 )
+
+                let config = URLSessionConfiguration.default
+                config.timeoutIntervalForRequest = timeoutIntervalForRequest
+                config.timeoutIntervalForResource = timeoutIntervalForResource
+
                 let session = URLSession(
-                    configuration: .default,
+                    configuration: config,
                     delegate: delegate,
                     delegateQueue: nil
                 )
+
                 let task = session.webSocketTask(with: url)
                 task.maximumMessageSize = maximumMessageSize
                 state = .connecting(session, task, delegate)
                 task.resume()
                 receiveFromWebSocket()
+                
             default:
                 break
             }
