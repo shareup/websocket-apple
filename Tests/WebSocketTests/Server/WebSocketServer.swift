@@ -19,8 +19,8 @@ final class WebSocketServer {
 
     init(port: UInt16, replyProvider: ReplyType) {
         self.port = port
-        self.replyType = replyProvider
-        self.eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        replyType = replyProvider
+        eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
     }
 
     func listen() {
@@ -36,11 +36,9 @@ final class WebSocketServer {
                 throw NIO.ChannelError.unknownLocalAddress
             }
             print("WebSocketServer running on \(localAddress)")
-        }
-        catch let error as NIO.IOError {
+        } catch let error as NIO.IOError {
             print("Failed to start server: \(error.errnoCode) '\(error.localizedDescription)'")
-        }
-        catch {
+        } catch {
             print("Failed to start server: \(String(describing: error))")
         }
     }
@@ -50,25 +48,30 @@ final class WebSocketServer {
         catch { print("Failed to wait on server: \(error)") }
     }
 
-    private func shouldUpgrade(channel: Channel, head: HTTPRequestHead) -> EventLoopFuture<HTTPHeaders?> {
+    private func shouldUpgrade(channel _: Channel,
+                               head: HTTPRequestHead) -> EventLoopFuture<HTTPHeaders?>
+    {
         let headers = head.uri.starts(with: "/socket") ? HTTPHeaders() : nil
         return eventLoopGroup.next().makeSucceededFuture(headers)
     }
 
-    private func upgradePipelineHandler(channel: Channel, head: HTTPRequestHead) -> NIO.EventLoopFuture<Void> {
-        return head.uri.starts(with: "/socket") ?
-            channel.pipeline.addHandler(WebSocketHandler(replyProvider: replyProvider)) : channel.closeFuture
+    private func upgradePipelineHandler(channel: Channel, head: HTTPRequestHead) -> NIO
+        .EventLoopFuture<Void>
+    {
+        head.uri.starts(with: "/socket") ?
+            channel.pipeline.addHandler(WebSocketHandler(replyProvider: replyProvider)) : channel
+            .closeFuture
     }
 
     private var replyProvider: (String) -> String? {
-        return { [weak self] (input: String) -> String? in
+        { [weak self] (input: String) -> String? in
             guard let self = self else { return nil }
             switch self.replyType {
             case .echo:
                 return input
-            case .reply(let iterator):
+            case let .reply(iterator):
                 return iterator()
-            case .matchReply(let matcher):
+            case let .matchReply(matcher):
                 return matcher(input)
             }
         }
@@ -104,7 +107,7 @@ final class WebSocketServer {
 }
 
 private class WebSocketHandler: ChannelInboundHandler {
-    typealias InboundIn   = WebSocketFrame
+    typealias InboundIn = WebSocketFrame
     typealias OutboundOut = WebSocketFrame
 
     private let replyProvider: (String) -> String?
@@ -119,9 +122,9 @@ private class WebSocketHandler: ChannelInboundHandler {
 
         switch frame.opcode {
         case .connectionClose:
-            self.onClose(context: context, frame: frame)
+            onClose(context: context, frame: frame)
         case .ping:
-            self.onPing(context: context, frame: frame)
+            onPing(context: context, frame: frame)
         case .text:
             var data = frame.unmaskedData
             let text = data.readString(length: data.readableBytes) ?? ""
@@ -142,7 +145,7 @@ private class WebSocketHandler: ChannelInboundHandler {
             if let text = String(data: binary, encoding: .utf8) {
                 onText(context: context, text: text)
             } else {
-                throw NIO.IOError.init(errnoCode: EBADMSG, reason: "Invalid message")
+                throw NIO.IOError(errnoCode: EBADMSG, reason: "Invalid message")
             }
         } catch {
             onError(context: context)
@@ -168,7 +171,7 @@ private class WebSocketHandler: ChannelInboundHandler {
         }
 
         let pong = WebSocketFrame(fin: true, opcode: .pong, data: frameData)
-        context.write(self.wrapOutboundOut(pong), promise: nil)
+        context.write(wrapOutboundOut(pong), promise: nil)
     }
 
     private func onClose(context: ChannelHandlerContext, frame: WebSocketFrame) {
@@ -178,9 +181,14 @@ private class WebSocketHandler: ChannelInboundHandler {
         } else {
             // The close came from the client.
             var data = frame.unmaskedData
-            let closeDataCode = data.readSlice(length: 2) ?? context.channel.allocator.buffer(capacity: 0)
-            let closeFrame = WebSocketFrame(fin: true, opcode: .connectionClose, data: closeDataCode)
-            _ = context.write(self.wrapOutboundOut(closeFrame)).map { () in
+            let closeDataCode = data.readSlice(length: 2) ?? context.channel.allocator
+                .buffer(capacity: 0)
+            let closeFrame = WebSocketFrame(
+                fin: true,
+                opcode: .connectionClose,
+                data: closeDataCode
+            )
+            _ = context.write(wrapOutboundOut(closeFrame)).map { () in
                 context.close(promise: nil)
             }
         }
@@ -190,7 +198,7 @@ private class WebSocketHandler: ChannelInboundHandler {
         var data = context.channel.allocator.buffer(capacity: 2)
         data.write(webSocketErrorCode: .protocolError)
         let frame = WebSocketFrame(fin: true, opcode: .connectionClose, data: data)
-        context.write(self.wrapOutboundOut(frame)).whenComplete { (_: Result<Void, Error>) in
+        context.write(wrapOutboundOut(frame)).whenComplete { (_: Result<Void, Error>) in
             context.close(mode: .output, promise: nil)
         }
         awaitingClose = true
