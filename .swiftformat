@@ -1,0 +1,6 @@
+--funcattributes prev-line
+--minversion 0.47.2
+--maxwidth 100
+--typeattributes prev-line
+--wraparguments before-first
+--wrapcollections before-first
