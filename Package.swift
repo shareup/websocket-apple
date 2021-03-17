@@ -9,24 +9,35 @@ let package = Package(
     products: [
         .library(
             name: "WebSocket",
-            targets: ["WebSocket"]),
+            targets: ["WebSocket"]
+        ),
     ],
     dependencies: [
-        .package(name: "Synchronized", url: "https://github.com/shareup/synchronized.git", from: "2.1.0"),
-        .package(name: "WebSocketProtocol", url: "https://github.com/shareup/websocket-protocol.git", from: "2.2.0"),
+        .package(
+            name: "Synchronized",
+            url: "https://github.com/shareup/synchronized.git",
+            from: "2.1.0"
+        ),
+        .package(
+            name: "WebSocketProtocol",
+            url: "https://github.com/shareup/websocket-protocol.git",
+            from: "2.2.0"
+        ),
         .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
     ],
     targets: [
         .target(
             name: "WebSocket",
-            dependencies: ["Synchronized", "WebSocketProtocol"]),
+            dependencies: ["Synchronized", "WebSocketProtocol"]
+        ),
         .testTarget(
             name: "WebSocketTests",
             dependencies: [
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
-                "WebSocket"
-            ]),
+                "WebSocket",
+            ]
+        ),
     ]
 )

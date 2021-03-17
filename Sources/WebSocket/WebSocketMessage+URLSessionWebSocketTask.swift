@@ -4,9 +4,9 @@ import WebSocketProtocol
 extension WebSocketMessage {
     init(_ message: URLSessionWebSocketTask.Message) {
         switch message {
-        case .data(let data):
+        case let .data(data):
             self = .binary(data)
-        case .string(let string):
+        case let .string(string):
             self = .text(string)
         @unknown default:
             assertionFailure("Unknown WebSocket Message type")

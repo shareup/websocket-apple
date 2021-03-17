@@ -1,15 +1,15 @@
-import XCTest
 import Combine
-import WebSocketProtocol
 @testable import WebSocket
+import WebSocketProtocol
+import XCTest
 
-private var ports = (50000...52000).map { UInt16($0) }
+private var ports = (50000 ... 52000).map { UInt16($0) }
 
 class WebSocketTests: XCTestCase {
     func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
 
     func testCanConnectToAndDisconnectFromServer() throws {
-        try withServer { (server, client) in
+        try withServer { _, client in
             let sub = client.sink(
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValueAndThen(WebSocketMessage.open, client.close())
@@ -25,7 +25,7 @@ class WebSocketTests: XCTestCase {
     }
 
     func testCompleteWhenServerIsUnreachable() throws {
-        try withServer { (server, client) in
+        try withServer { server, client in
             server.close()
 
             let sub = client.sink(
@@ -51,7 +51,7 @@ class WebSocketTests: XCTestCase {
     }
 
     func testCompleteWhenRemoteCloses() throws {
-        try withServer { (server, client) in
+        try withServer { _, client in
             var invalidUTF8Bytes = [0x192, 0x193] as [UInt16]
             let bytes = withUnsafeBytes(of: &invalidUTF8Bytes) { Array($0) }
             let data = Data(bytes: bytes, count: bytes.count)
@@ -88,7 +88,7 @@ class WebSocketTests: XCTestCase {
     }
 
     func testEchoPush() throws {
-        try withEchoServer { (server, client) in
+        try withEchoServer { _, client in
             let message = "hello"
             let completion = self.expectNoError()
 
@@ -96,7 +96,7 @@ class WebSocketTests: XCTestCase {
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(message, completionHandler: completion) },
-                    .text(message): { client.close() }
+                    .text(message): { client.close() },
                 ])
             )
             defer { sub.cancel() }
@@ -107,7 +107,7 @@ class WebSocketTests: XCTestCase {
     }
 
     func testEchoBinaryPush() throws {
-        try withEchoServer { (server, client) in
+        try withEchoServer { _, client in
             let message = "hello"
             let binary = message.data(using: .utf8)!
             let completion = self.expectNoError()
@@ -116,7 +116,7 @@ class WebSocketTests: XCTestCase {
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(binary, completionHandler: completion) },
-                    .text(message): { client.close() }
+                    .text(message): { client.close() },
                 ])
             )
             defer { sub.cancel() }
@@ -132,20 +132,24 @@ class WebSocketTests: XCTestCase {
         let echoPush2 = "[1,3,\"room:lobby\",\"echo\",{\"echo\":\"two\"}]"
 
         let joinReply = "[1,1,\"room:lobby\",\"phx_reply\",{\"response\":{},\"status\":\"ok\"}]"
-        let echoReply1 = "[1,2,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"one\"},\"status\":\"ok\"}]"
-        let echoReply2 = "[1,3,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"two\"},\"status\":\"ok\"}]"
+        let echoReply1 =
+            "[1,2,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"one\"},\"status\":\"ok\"}]"
+        let echoReply2 =
+            "[1,3,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"two\"},\"status\":\"ok\"}]"
 
-        let joinCompletion = self.expectNoError()
-        let echo1Completion = self.expectNoError()
-        let echo2Completion = self.expectNoError()
+        let joinCompletion = expectNoError()
+        let echo1Completion = expectNoError()
+        let echo2Completion = expectNoError()
 
-        try withReplyServer([joinReply, echoReply1, echoReply2]) { (server, client) in
+        try withReplyServer([joinReply, echoReply1, echoReply2]) { _, client in
             let sub = client.sink(
                 receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(joinPush, completionHandler: joinCompletion) },
-                    .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion) },
-                    .text(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion) },
+                    .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion)
+                    },
+                    .text(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion)
+                    },
                     .text(echoReply2): { client.close() },
                 ])
             )
@@ -158,12 +162,12 @@ class WebSocketTests: XCTestCase {
 
     func testCanSendFromTwoThreadsSimultaneously() throws {
         let queueCount = 8
-        let queues = (0..<queueCount).map { DispatchQueue(label: "\($0)") }
+        let queues = (0 ..< queueCount).map { DispatchQueue(label: "\($0)") }
 
         let messageCount = 100
         let sendMessages: (WebSocket) -> Void = { client in
-            (0..<messageCount).forEach { messageIndex in
-                (0..<queueCount).forEach { queueIndex in
+            (0 ..< messageCount).forEach { messageIndex in
+                (0 ..< queueCount).forEach { queueIndex in
                     queues[queueIndex].async { client.send("\(queueIndex)-\(messageIndex)") }
                 }
             }
@@ -174,9 +178,9 @@ class WebSocketTests: XCTestCase {
         )
         receiveMessageEx.expectedFulfillmentCount = queueCount * messageCount
 
-        try withEchoServer { (server, client) in
+        try withEchoServer { _, client in
             let sub = client.sink(
-                receiveCompletion: {_ in },
+                receiveCompletion: { _ in },
                 receiveValue: { message in
                     switch message {
                     case .success(.open):
@@ -213,12 +217,12 @@ private extension WebSocketTests {
     }
 
     func withReplyServer(
-        _ replies: Array<String?>,
+        _ replies: [String?],
         _ block: (WebSocketServer, WebSocket) throws -> Void
     ) throws {
         let port = ports.removeFirst()
         var replies = replies
-        let provider: () -> String? = { return replies.removeFirst() }
+        let provider: () -> String? = { replies.removeFirst() }
         let server = WebSocketServer(port: port, replyProvider: .reply(provider))
         let client = WebSocket(url: url(port))
         try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
@@ -228,14 +232,18 @@ private extension WebSocketTests {
 private extension WebSocketTests {
     func expectValueAndThen<T: Hashable, E: Error>(
         _ value: T,
-        _ block: @escaping @autoclosure () -> Void) -> (Result<T, E>) -> Void
-    {
-        return self.expectValuesAndThen([value: block])
+        _ block: @escaping @autoclosure () -> Void
+    ) -> (Result<T, E>) -> Void {
+        expectValuesAndThen([value: block])
     }
 
-    func expectValuesAndThen<T: Hashable, E: Error>(_ values: Dictionary<T, () -> Void>) -> (Result<T, E>) -> Void {
+    func expectValuesAndThen<
+        T: Hashable,
+        E: Error
+    >(_ values: [T: () -> Void]) -> (Result<T, E>) -> Void {
         var values = values
-        let expectation = self.expectation(description: "Should have received \(String(describing: values))")
+        let expectation = self
+            .expectation(description: "Should have received \(String(describing: values))")
         return { (result: Result<T, E>) in
             guard case let .success(value) = result else {
                 return XCTFail("Unexpected result: \(String(describing: result))")

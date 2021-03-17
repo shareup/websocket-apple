@@ -54,10 +54,13 @@ public final class WebSocket: WebSocketProtocol {
         return true
     } }
 
-    private let lock: RecursiveLock = RecursiveLock()
-    private func sync<T>(_ block: () throws -> T) rethrows -> T { return try lock.locked(block) }
+    private let lock = RecursiveLock()
+    private func sync<T>(_ block: () throws -> T) rethrows -> T { try lock.locked(block) }
 
     private let url: URL
+
+    private let timeoutIntervalForRequest: TimeInterval
+    private let timeoutIntervalForResource: TimeInterval
 
     private var state: State = .unopened
     private let subject = PassthroughSubject<Output, Failure>()
@@ -65,14 +68,21 @@ public final class WebSocket: WebSocketProtocol {
     private let subjectQueue: DispatchQueue
 
     public convenience init(url: URL) {
-        self.init(url: url, publisherQueue: nil)
+        self.init(url: url, publisherQueue: DispatchQueue.global())
     }
 
-    public init(url: URL, publisherQueue: DispatchQueue?) {
+    public init(
+        url: URL,
+        timeoutIntervalForRequest: TimeInterval = 60, // 60 seconds
+        timeoutIntervalForResource: TimeInterval = 604_800, // 7 days
+        publisherQueue: DispatchQueue = DispatchQueue.global()
+    ) {
         self.url = url
-        self.subjectQueue = DispatchQueue(
+        self.timeoutIntervalForRequest = timeoutIntervalForRequest
+        self.timeoutIntervalForResource = timeoutIntervalForResource
+        subjectQueue = DispatchQueue(
             label: "app.shareup.websocket.subjectqueue",
-            attributes: [],
+            qos: .default,
             autoreleaseFrequency: .workItem,
             target: publisherQueue
         )
@@ -91,23 +101,30 @@ public final class WebSocket: WebSocketProtocol {
                 state.debugDescription
             )
 
-            switch (state) {
+            switch state {
             case .closed, .unopened:
                 let delegate = WebSocketDelegate(
                     onOpen: onOpen,
                     onClose: onClose,
                     onCompletion: onCompletion
                 )
+
+                let config = URLSessionConfiguration.default
+                config.timeoutIntervalForRequest = timeoutIntervalForRequest
+                config.timeoutIntervalForResource = timeoutIntervalForResource
+
                 let session = URLSession(
-                    configuration: .default,
+                    configuration: config,
                     delegate: delegate,
                     delegateQueue: nil
                 )
+
                 let task = session.webSocketTask(with: url)
                 task.maximumMessageSize = maximumMessageSize
                 state = .connecting(session, task, delegate)
                 task.resume()
                 receiveFromWebSocket()
+
             default:
                 break
             }
@@ -121,7 +138,7 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     private func receiveFromWebSocket() {
-        let task: URLSessionWebSocketTask? = self.sync {
+        let task: URLSessionWebSocketTask? = sync {
             let webSocketTask = self.state.webSocketSessionAndTask?.1
             guard let task = webSocketTask, case .running = task.state else { return nil }
             return task
@@ -169,7 +186,7 @@ public final class WebSocket: WebSocketProtocol {
         completionHandler: @escaping (Error?) -> Void
     ) {
         let task: URLSessionWebSocketTask? = sync {
-            guard case .open(_, let task, _) = state, task.state == .running
+            guard case let .open(_, task, _) = state, task.state == .running
             else {
                 os_log(
                     "send message in incorrect task state: message=%s taskstate=%{public}@",
@@ -187,8 +204,8 @@ public final class WebSocket: WebSocketProtocol {
         task?.send(message, completionHandler: completionHandler)
     }
 
-    public func close(_ closeCode:  WebSocketCloseCode) {
-        let task: URLSessionWebSocketTask? = self.sync {
+    public func close(_ closeCode: WebSocketCloseCode) {
+        let task: URLSessionWebSocketTask? = sync {
             os_log(
                 "close: oldstate=%{public}@ code=%lld",
                 log: .webSocket,
@@ -209,16 +226,21 @@ public final class WebSocket: WebSocketProtocol {
 }
 
 private typealias OnOpenHandler = (URLSession, URLSessionWebSocketTask, String?) -> Void
-private typealias OnCloseHandler = (URLSession, URLSessionWebSocketTask, URLSessionWebSocketTask.CloseCode, Data?) -> Void
+private typealias OnCloseHandler = (
+    URLSession,
+    URLSessionWebSocketTask,
+    URLSessionWebSocketTask.CloseCode,
+    Data?
+) -> Void
 private typealias OnCompletionHandler = (URLSession, URLSessionTask, Error?) -> Void
 
 private let normalCloseCodes: [URLSessionWebSocketTask.CloseCode] = [.goingAway, .normalClosure]
 
 // MARK: onOpen and onClose
 
-private extension WebSocket  {
+private extension WebSocket {
     var onOpen: OnOpenHandler {
-        return { [weak self] (webSocketSession, webSocketTask, `protocol`) in
+        { [weak self] webSocketSession, webSocketTask, _ in
             guard let self = self else { return }
 
             self.sync {
@@ -255,7 +277,7 @@ private extension WebSocket  {
     }
 
     var onClose: OnCloseHandler {
-        return { [weak self] (webSocketSession, webSocketTask, closeCode, reason) in
+        { [weak self] _, _, closeCode, reason in
             guard let self = self else { return }
 
             self.sync {
@@ -284,10 +306,10 @@ private extension WebSocket  {
     }
 
     var onCompletion: OnCompletionHandler {
-        return { [weak self] (webSocketSession, webSocketTask, error) in
+        { [weak self] webSocketSession, _, error in
             defer { webSocketSession.invalidateAndCancel() }
             guard let self = self else { return }
-            
+
             os_log("onCompletion", log: .webSocket, type: .debug)
 
             // "The only errors your delegate receives through the error parameter
@@ -338,20 +360,23 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
 
     func urlSession(_ webSocketSession: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
-                    didOpenWithProtocol protocol: String?) {
-        self.onOpen(webSocketSession, webSocketTask, `protocol`)
+                    didOpenWithProtocol protocol: String?)
+    {
+        onOpen(webSocketSession, webSocketTask, `protocol`)
     }
 
     func urlSession(_ session: URLSession,
                     webSocketTask: URLSessionWebSocketTask,
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
-                    reason: Data?) {
-        self.onClose(session, webSocketTask, closeCode, reason)
+                    reason: Data?)
+    {
+        onClose(session, webSocketTask, closeCode, reason)
     }
 
     func urlSession(_ session: URLSession,
                     task: URLSessionTask,
-                    didCompleteWithError error: Error?) {
-        self.onCompletion(session, task, error)
+                    didCompleteWithError error: Error?)
+    {
+        onCompletion(session, task, error)
     }
 }

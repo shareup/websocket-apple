@@ -1,6 +1,6 @@
-import XCTest
-import WebSocketProtocol
 @testable import WebSocket
+import WebSocketProtocol
+import XCTest
 
 class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
     func testCanInitializeURLSessionWebSocketTaskCloseCode() throws {
@@ -16,12 +16,13 @@ class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
             .messageTooBig, .mandatoryExtensionMissing, .internalServerError, .tlsHandshakeFailure,
         ]
 
-        zip(urlSessionCloseCodes, closeCodes).forEach { (urlSessionCloseCode, closeCode) in
+        zip(urlSessionCloseCodes, closeCodes).forEach { urlSessionCloseCode, closeCode in
             XCTAssertEqual(urlSessionCloseCode, URLSessionWebSocketTask.CloseCode(closeCode))
         }
     }
 
     func testAllWebSocketCloseCodesHaveCorrespondingURLSessionCloseCodes() throws {
-        WebSocketCloseCode.allCases.forEach { XCTAssertNotNil(URLSessionWebSocketTask.CloseCode($0)) }
+        WebSocketCloseCode.allCases
+            .forEach { XCTAssertNotNil(URLSessionWebSocketTask.CloseCode($0)) }
     }
 }
