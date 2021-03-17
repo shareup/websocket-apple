@@ -82,7 +82,7 @@ public final class WebSocket: WebSocketProtocol {
         self.timeoutIntervalForResource = timeoutIntervalForResource
         self.subjectQueue = DispatchQueue(
             label: "app.shareup.websocket.subjectqueue",
-            attributes: [],
+            qos: .default,
             autoreleaseFrequency: .workItem,
             target: publisherQueue
         )
