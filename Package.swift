@@ -1,4 +1,4 @@
-// swift-tools-version:5.2
+// swift-tools-version:5.3
 import PackageDescription
 
 let package = Package(
@@ -10,29 +10,23 @@ let package = Package(
         .library(
             name: "WebSocket",
             targets: ["WebSocket"]
-        ),
-    ],
+        )],
     dependencies: [
         .package(
             name: "Synchronized",
             url: "https://github.com/shareup/synchronized.git",
-            from: "2.3.0"
+            from: "3.0.0"
         ),
         .package(
             name: "WebSocketProtocol",
             url: "https://github.com/shareup/websocket-protocol.git",
             from: "2.2.0"
         ),
-        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
-    ],
+        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0")],
     targets: [
         .target(
             name: "WebSocket",
-            dependencies: [
-                .product(name: "SynchronizedDynamic", package: "Synchronized"),
-                "WebSocketProtocol"
-            ]
-        ),
+            dependencies: ["Synchronized", "WebSocketProtocol"]),
         .testTarget(
             name: "WebSocketTests",
             dependencies: [
@@ -40,7 +34,6 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 "WebSocket",
-            ]
-        ),
+            ])
     ]
 )
