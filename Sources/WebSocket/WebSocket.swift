@@ -57,7 +57,7 @@ public final class WebSocket: WebSocketProtocol {
     private let lock = RecursiveLock()
     private func sync<T>(_ block: () throws -> T) rethrows -> T { try lock.locked(block) }
 
-    private let url: URL
+    var url: URL?
 
     private let timeoutIntervalForRequest: TimeInterval
     private let timeoutIntervalForResource: TimeInterval
@@ -67,12 +67,16 @@ public final class WebSocket: WebSocketProtocol {
 
     private let subjectQueue: DispatchQueue
 
-    public convenience init(url: URL) {
+    public convenience init() {
+        self.init(url: nil)
+    }
+    
+    public convenience init(url: URL?) {
         self.init(url: url, publisherQueue: DispatchQueue.global())
     }
 
     public init(
-        url: URL,
+        url: URL?,
         timeoutIntervalForRequest: TimeInterval = 60, // 60 seconds
         timeoutIntervalForResource: TimeInterval = 604_800, // 7 days
         publisherQueue: DispatchQueue = DispatchQueue.global()
@@ -103,6 +107,12 @@ public final class WebSocket: WebSocketProtocol {
 
             switch state {
             case .closed, .unopened:
+                
+                guard let url = self.url else {
+                    state = .closed(.missingURL)
+                    return
+                }
+                
                 let delegate = WebSocketDelegate(
                     onOpen: onOpen,
                     onClose: onClose,

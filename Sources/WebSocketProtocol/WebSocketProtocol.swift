@@ -6,7 +6,7 @@ public protocol WebSocketProtocol: Publisher where Failure == Never, Output == R
     var maximumMessageSize: Int { get set }
 
     /// Initializes an instance of `WebSocketProtocol` with the specified `URL`.
-    init(url: URL) throws
+    init(url: URL?) throws
 
     /// Connects the socket to the server.
     func connect()
