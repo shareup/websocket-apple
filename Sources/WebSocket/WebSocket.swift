@@ -6,7 +6,7 @@ import WebSocketProtocol
 
 public final class WebSocket: WebSocketProtocol {
     public typealias Output = Result<WebSocketMessage, Swift.Error>
-    public typealias Failure = Swift.Error
+    public typealias Failure = Never
 
     private enum State: CustomDebugStringConvertible {
         case unopened
@@ -89,7 +89,7 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     deinit {
-        close()
+        self.close(.goingAway)
     }
 
     public func connect() {
@@ -132,7 +132,7 @@ public final class WebSocket: WebSocketProtocol {
     }
 
     public func receive<S: Subscriber>(subscriber: S)
-        where S.Input == Result<WebSocketMessage, Swift.Error>, S.Failure == Swift.Error
+        where S.Input == Result<WebSocketMessage, Swift.Error>, S.Failure == Failure
     {
         subject.receive(subscriber: subscriber)
     }
@@ -294,10 +294,9 @@ private extension WebSocket {
 
                 self.subjectQueue.async { [weak self] in
                     if normalCloseCodes.contains(closeCode) {
-                        self?.subject.send(completion: .finished)
+                        self?.subject.send(.success(.closed))
                     } else {
-                        self?.subject.send(
-                            completion: .failure(WebSocketError.closed(closeCode, reason))
+                        self?.subject.send(.failure(WebSocketError.closed(closeCode, reason))
                         )
                     }
                 }
@@ -334,7 +333,7 @@ private extension WebSocket {
                 self.state = .closed(.notOpen)
 
                 self.subjectQueue.async { [weak self] in
-                    self?.subject.send(completion: .failure(error))
+                    self?.subject.send(.failure(error))
                 }
             }
         }

@@ -10,23 +10,23 @@ let package = Package(
         .library(
             name: "WebSocket",
             targets: ["WebSocket"]
-        )],
+        ),
+            .library(
+                name: "WebSocketProtocol",
+                targets: ["WebSocketProtocol"])
+    ],
     dependencies: [
         .package(
             name: "Synchronized",
             url: "https://github.com/shareup/synchronized.git",
             from: "3.0.0"
         ),
-        .package(
-            name: "WebSocketProtocol",
-            url: "https://github.com/shareup/websocket-protocol.git",
-            from: "2.2.0"
-        ),
         .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0")],
     targets: [
         .target(
             name: "WebSocket",
             dependencies: ["Synchronized", "WebSocketProtocol"]),
+        .target(name: "WebSocketProtocol"),
         .testTarget(
             name: "WebSocketTests",
             dependencies: [
