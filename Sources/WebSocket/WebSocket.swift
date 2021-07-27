@@ -57,7 +57,7 @@ public final class WebSocket: WebSocketProtocol {
     private let lock = RecursiveLock()
     private func sync<T>(_ block: () throws -> T) rethrows -> T { try lock.locked(block) }
 
-    var url: URL?
+    public var url: URL?
 
     private let timeoutIntervalForRequest: TimeInterval
     private let timeoutIntervalForResource: TimeInterval
