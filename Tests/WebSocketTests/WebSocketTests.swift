@@ -5,14 +5,28 @@ import XCTest
 
 private var ports = (50000 ... 52000).map { UInt16($0) }
 
+private func emptyFunction() {}
+
+
+
+struct ExpectedValue<T> {
+
+    let value: T
+    let response: () -> Void
+}
+
 class WebSocketTests: XCTestCase {
     func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
 
     func testCanConnectToAndDisconnectFromServer() throws {
         try withServer { _, client in
             let sub = client.sink(
-                receiveCompletion: expectFinished(),
-                receiveValue: expectValueAndThen(WebSocketMessage.open, client.close())
+                receiveValue: expectValuesAndThen(
+                    [
+                        WebSocketMessage.open: client.close,
+                        WebSocketMessage.closed: emptyFunction
+                    ]
+                )
             )
             defer { sub.cancel() }
 
@@ -24,18 +38,46 @@ class WebSocketTests: XCTestCase {
         }
     }
 
+    func testCanReconnectToServer() throws {
+
+
+        try withEchoServer { _, client in
+
+            let message = "hello test"
+            let completion = self.expectNoError()
+
+
+            let sub = client.sink(
+                receiveValue: expectValuesAndThen(
+                    [
+                        ExpectedValue(value: .open, response: client.close),
+                        ExpectedValue(value: .closed, response: client.connect),
+                        ExpectedValue(value: .open, response: { client.send(message, completionHandler: completion) }),
+                        ExpectedValue(value: .text(message), response: emptyFunction)
+                    ]
+                )
+            )
+            defer { sub.cancel() }
+
+            client.connect()
+            waitForExpectations(timeout: 2)
+
+            XCTAssertTrue(client.isOpen)
+            XCTAssertFalse(client.isClosed)
+        }
+    }
+
     func testCompleteWhenServerIsUnreachable() throws {
         try withServer { server, client in
             server.close()
 
-            let sub = client.sink(
-                receiveCompletion: expectFailure(),
-                receiveValue: { result in
+            let expectError = expectation(description: "Error expected")
+            let sub = client.sink(receiveValue: { result in
                     switch result {
-                    case .failure:
-                        // It's possible to receive or not receive an error.
-                        // Clients need to be resilient in the face of this reality.
-                        break
+                    case .failure(let error):
+                        let error = error as NSError
+                        XCTAssertEqual(error.code, -1004, "Should receive could not connect to server error")
+                        expectError.fulfill()
                     case let .success(message):
                         XCTFail("Should not have received message: \(message)")
                     }
@@ -58,9 +100,9 @@ class WebSocketTests: XCTestCase {
 
             let openEx = self.expectation(description: "Should have opened")
             let errorEx = self.expectation(description: "Should have erred")
+            let closedEx = self.expectation(description: "Should have closed")
 
             let sub = client.sink(
-                receiveCompletion: expectFailure(),
                 receiveValue: { result in
                     switch result {
                     case .success(.open):
@@ -68,7 +110,11 @@ class WebSocketTests: XCTestCase {
                         XCTAssertFalse(client.isClosed)
                         client.send(data)
                         openEx.fulfill()
+                    case .failure(WebSocketError.closed):
+                        print("closed")
+                        closedEx.fulfill()
                     case let .failure(error as NSError):
+                        print(error)
                         XCTAssertEqual("NSPOSIXErrorDomain", error.domain)
                         XCTAssertEqual(57, error.code)
                         errorEx.fulfill()
@@ -93,7 +139,6 @@ class WebSocketTests: XCTestCase {
             let completion = self.expectNoError()
 
             let sub = client.sink(
-                receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(message, completionHandler: completion) },
                     .text(message): { client.close() },
@@ -113,7 +158,6 @@ class WebSocketTests: XCTestCase {
             let completion = self.expectNoError()
 
             let sub = client.sink(
-                receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(binary, completionHandler: completion) },
                     .text(message): { client.close() },
@@ -143,7 +187,6 @@ class WebSocketTests: XCTestCase {
 
         try withReplyServer([joinReply, echoReply1, echoReply2]) { _, client in
             let sub = client.sink(
-                receiveCompletion: expectFinished(),
                 receiveValue: expectValuesAndThen([
                     .open: { client.send(joinPush, completionHandler: joinCompletion) },
                     .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion)
@@ -258,6 +301,29 @@ private extension WebSocketTests {
             }
         }
     }
+
+    func expectValuesAndThen<T: Equatable, E>(_ values: [ExpectedValue<T>]) -> (Result<T, E>) -> Void {
+        var values = values
+        let expectation = self
+            .expectation(description: "Should have received \(String(describing: values))")
+        return { (result: Result<T, E>) in
+
+            print(result)
+            guard case let .success(value) = result else {
+                return XCTFail("Unexpected result: \(String(describing: result))")
+            }
+
+            let expectedValue = values.removeFirst()
+            XCTAssertNotNil(expectedValue)
+            XCTAssertEqual(expectedValue.value, value)
+            expectedValue.response()
+
+            if values.isEmpty {
+                expectation.fulfill()
+            }
+        }
+    }
+
 
     func expectFinished<E: Error>() -> (Subscribers.Completion<E>) -> Void {
         let expectation = self.expectation(description: "Should have finished successfully")
