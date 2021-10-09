@@ -21,11 +21,14 @@ let package = Package(
             url: "https://github.com/shareup/synchronized.git",
             from: "3.0.0"
         ),
-        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0")],
+        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0"),
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0")
+    ],
+
     targets: [
         .target(
             name: "WebSocket",
-            dependencies: ["Synchronized", "WebSocketProtocol"]),
+            dependencies: ["Synchronized", "WebSocketProtocol", .product(name: "Logging", package: "swift-log")]),
         .target(name: "WebSocketProtocol"),
         .testTarget(
             name: "WebSocketTests",
