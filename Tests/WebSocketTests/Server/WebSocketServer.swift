@@ -59,8 +59,8 @@ final class WebSocketServer {
         .EventLoopFuture<Void>
     {
         head.uri.starts(with: "/socket") ?
-            channel.pipeline.addHandler(WebSocketHandler(replyProvider: replyProvider)) : channel
-            .closeFuture
+            channel.pipeline.addHandler(WebSocketHandler(replyProvider: replyProvider)) :
+            channel.closeFuture
     }
 
     private var replyProvider: (String) -> String? {

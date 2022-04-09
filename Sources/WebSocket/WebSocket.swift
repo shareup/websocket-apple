@@ -35,6 +35,14 @@ final actor WebSocket {
     }
 
     func close(_ code: WebSocketCloseCode) async {
+        os_log(
+            "close: oldstate=%{public}@ code=%lld",
+            log: .webSocket,
+            type: .debug,
+            state.description,
+            code.rawValue
+        )
+
         switch state {
         case let .connecting(session, task, _), let .open(session, task, _):
             state = .closed(code.urlSessionCloseCode, nil)
@@ -51,13 +59,26 @@ final actor WebSocket {
         // Mirrors the document behavior of JavaScript's `WebSocket`
         // http://developer.mozilla.org/en-US/docs/Web/API/WebSocket/send
         switch state {
-        case let .open(session, task, _):
+        case let .open(_, task, _):
+            os_log("send: %s", log: .webSocket, type: .debug, message.debugDescription)
             try await task.send(message)
 
         case .unopened, .connecting:
+            os_log(
+                "send message while connecting: %s",
+                log: .webSocket,
+                type: .error,
+                message.debugDescription
+            )
             throw WebSocketError.sendMessageWhileConnecting
 
         case .closing, .closed:
+            os_log(
+                "send message while closed: %s",
+                log: .webSocket,
+                type: .debug,
+                message.debugDescription
+            )
             break
         }
     }
@@ -65,9 +86,18 @@ final actor WebSocket {
     func receive() async throws -> URLSessionWebSocketTask.Message {
         switch state {
         case let .open(_, task, _):
-            return try await task.receive()
+            let message = try await task.receive()
+            os_log("receive: %s", log: .webSocket, type: .debug, message.debugDescription)
+            return message
+
 
         case .unopened, .connecting, .closing, .closed:
+            os_log(
+                "receive in incorrect state: %s",
+                log: .webSocket,
+                type: .error,
+                state.description
+            )
             throw WebSocketError.receiveMessageWhenNotOpen
         }
     }
@@ -83,7 +113,7 @@ private extension WebSocket {
             "connect: oldstate=%{public}@",
             log: .webSocket,
             type: .debug,
-            state.debugDescription
+            state.description
         )
 
         switch state {
@@ -173,7 +203,7 @@ private extension WebSocket {
     }
 }
 
-private enum WebSocketState: CustomDebugStringConvertible {
+private enum WebSocketState: CustomStringConvertible {
     case unopened
     case connecting(URLSession, URLSessionWebSocketTask, WebSocketDelegate)
     case open(URLSession, URLSessionWebSocketTask, WebSocketDelegate)
@@ -189,7 +219,7 @@ private enum WebSocketState: CustomDebugStringConvertible {
         }
     }
 
-    var debugDescription: String {
+    var description: String {
         switch self {
         case .unopened: return "unopened"
         case .connecting: return "connecting"
@@ -221,7 +251,6 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         webSocketTask: URLSessionWebSocketTask,
         didOpenWithProtocol protocol: String?
     ) {
-        Swift.print("$$$ \(#function)")
         Task { await onStateChange(.open(webSocketSession, webSocketTask, `protocol`)) }
     }
 
@@ -231,7 +260,6 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
     ) {
-        Swift.print("$$$ \(#function)")
         Task { await onStateChange(.close(session, webSocketTask, closeCode, reason)) }
     }
 
@@ -240,12 +268,7 @@ private class WebSocketDelegate: NSObject, URLSessionWebSocketDelegate {
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
-        Swift.print("$$$ \(#function)")
         Task { await onStateChange(.complete(session, task, error)) }
-    }
-
-    func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
-        Swift.print("$$$ \(#function): \(String(describing: error))")
     }
 }
 

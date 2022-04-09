@@ -94,8 +94,8 @@ class WebSocketTests: XCTestCase {
 
         try await client.send(.data(data))
         wait(for: [errorEx], timeout: 0.5)
-//        let isClosed = await client.isClosed
-//        XCTAssertTrue(isClosed)
+        let isClosed = await client.isClosed
+        XCTAssertTrue(isClosed)
     }
 
     func testEchoPush() async throws {
