@@ -1,5 +1,4 @@
 @testable import WebSocket
-import WebSocketProtocol
 import XCTest
 
 class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {

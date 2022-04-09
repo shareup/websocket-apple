@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "WebSocket",
     platforms: [
-        .macOS(.v10_15), .iOS(.v13), .tvOS(.v13), .watchOS(.v6),
+        .macOS(.v11), .iOS(.v14), .tvOS(.v14), .watchOS(.v7),
     ],
     products: [
         .library(
@@ -17,16 +17,11 @@ let package = Package(
             url: "https://github.com/shareup/synchronized.git",
             from: "3.0.0"
         ),
-        .package(
-            name: "WebSocketProtocol",
-            url: "https://github.com/shareup/websocket-protocol.git",
-            from: "2.3.2"
-        ),
-        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.0.0")],
+        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.39.0")],
     targets: [
         .target(
             name: "WebSocket",
-            dependencies: ["Synchronized", "WebSocketProtocol"]),
+            dependencies: ["Synchronized"]),
         .testTarget(
             name: "WebSocketTests",
             dependencies: [

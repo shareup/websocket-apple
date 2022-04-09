@@ -1,285 +1,274 @@
 import Combine
 @testable import WebSocket
-import WebSocketProtocol
 import XCTest
 
 private var ports = (50000 ... 52000).map { UInt16($0) }
 
+// NOTE: If `WebSocketTests` is not marked as `@MainActor`, calls to
+// `wait(for:timeout:)` prevent other asyncronous events from running.
+// Using `await waitForExpectations(timeout:handler:)` works properly
+// because it's already marked as `@MainActor`.
+
+@MainActor
 class WebSocketTests: XCTestCase {
     func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
 
-    func testCanConnectToAndDisconnectFromServer() throws {
-        try withServer { _, client in
-            let sub = client.sink(
-                receiveCompletion: expectFinished(),
-                receiveValue: expectValueAndThen(WebSocketMessage.open, client.close())
-            )
-            defer { sub.cancel() }
+    func testCanConnectToAndDisconnectFromServer() async throws {
+        let openEx = expectation(description: "Should have opened")
+        let closeEx = expectation(description: "Should have closed")
+        let (server, client) = await makeServerAndClient { event in
+            switch event {
+            case .open:
+                openEx.fulfill()
 
-            client.connect()
-            waitForExpectations(timeout: 2)
+            case let .close(closeCode, _):
+                XCTAssertEqual(.normalClosure, closeCode)
+                closeEx.fulfill()
 
-            XCTAssertFalse(client.isOpen)
-            XCTAssertTrue(client.isClosed)
-        }
-    }
-
-    func testCompleteWhenServerIsUnreachable() throws {
-        try withServer { server, client in
-            server.close()
-
-            let sub = client.sink(
-                receiveCompletion: expectFailure(),
-                receiveValue: { result in
-                    switch result {
-                    case .failure:
-                        // It's possible to receive or not receive an error.
-                        // Clients need to be resilient in the face of this reality.
-                        break
-                    case let .success(message):
-                        XCTFail("Should not have received message: \(message)")
-                    }
-                }
-            )
-            defer { sub.cancel() }
-
-            client.connect()
-            waitForExpectations(timeout: 0.2)
-
-            XCTAssertTrue(client.isClosed)
-        }
-    }
-
-    func testCompleteWhenRemoteCloses() throws {
-        try withServer { _, client in
-            var invalidUTF8Bytes = [0x192, 0x193] as [UInt16]
-            let bytes = withUnsafeBytes(of: &invalidUTF8Bytes) { Array($0) }
-            let data = Data(bytes: bytes, count: bytes.count)
-
-            let openEx = self.expectation(description: "Should have opened")
-            let errorEx = self.expectation(description: "Should have erred")
-
-            let sub = client.sink(
-                receiveCompletion: expectFailure(),
-                receiveValue: { result in
-                    switch result {
-                    case .success(.open):
-                        XCTAssertTrue(client.isOpen)
-                        XCTAssertFalse(client.isClosed)
-                        client.send(data)
-                        openEx.fulfill()
-                    case let .failure(error as NSError):
-                        XCTAssertEqual("NSPOSIXErrorDomain", error.domain)
-                        XCTAssertEqual(57, error.code)
-                        errorEx.fulfill()
-                    default:
-                        break
-                    }
-                }
-            )
-            defer { sub.cancel() }
-
-            client.connect()
-            waitForExpectations(timeout: 2)
-
-            XCTAssertFalse(client.isOpen)
-            XCTAssertTrue(client.isClosed)
-        }
-    }
-
-    func testEchoPush() throws {
-        try withEchoServer { _, client in
-            let message = "hello"
-            let completion = self.expectNoError()
-
-            let sub = client.sink(
-                receiveCompletion: expectFinished(),
-                receiveValue: expectValuesAndThen([
-                    .open: { client.send(message, completionHandler: completion) },
-                    .text(message): { client.close() },
-                ])
-            )
-            defer { sub.cancel() }
-
-            client.connect()
-            waitForExpectations(timeout: 2)
-        }
-    }
-
-    func testEchoBinaryPush() throws {
-        try withEchoServer { _, client in
-            let message = "hello"
-            let binary = message.data(using: .utf8)!
-            let completion = self.expectNoError()
-
-            let sub = client.sink(
-                receiveCompletion: expectFinished(),
-                receiveValue: expectValuesAndThen([
-                    .open: { client.send(binary, completionHandler: completion) },
-                    .text(message): { client.close() },
-                ])
-            )
-            defer { sub.cancel() }
-
-            client.connect()
-            waitForExpectations(timeout: 2)
-        }
-    }
-
-    func testJoinLobbyAndEcho() throws {
-        let joinPush = "[1,1,\"room:lobby\",\"phx_join\",{}]"
-        let echoPush1 = "[1,2,\"room:lobby\",\"echo\",{\"echo\":\"one\"}]"
-        let echoPush2 = "[1,3,\"room:lobby\",\"echo\",{\"echo\":\"two\"}]"
-
-        let joinReply = "[1,1,\"room:lobby\",\"phx_reply\",{\"response\":{},\"status\":\"ok\"}]"
-        let echoReply1 =
-            "[1,2,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"one\"},\"status\":\"ok\"}]"
-        let echoReply2 =
-            "[1,3,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"two\"},\"status\":\"ok\"}]"
-
-        let joinCompletion = expectNoError()
-        let echo1Completion = expectNoError()
-        let echo2Completion = expectNoError()
-
-        try withReplyServer([joinReply, echoReply1, echoReply2]) { _, client in
-            let sub = client.sink(
-                receiveCompletion: expectFinished(),
-                receiveValue: expectValuesAndThen([
-                    .open: { client.send(joinPush, completionHandler: joinCompletion) },
-                    .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion)
-                    },
-                    .text(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion)
-                    },
-                    .text(echoReply2): { client.close() },
-                ])
-            )
-            defer { sub.cancel() }
-
-            client.connect()
-            waitForExpectations(timeout: 2)
-        }
-    }
-
-    func testCanSendFromTwoThreadsSimultaneously() throws {
-        let queueCount = 8
-        let queues = (0 ..< queueCount).map { DispatchQueue(label: "\($0)") }
-
-        let messageCount = 100
-        let sendMessages: (WebSocket) -> Void = { client in
-            (0 ..< messageCount).forEach { messageIndex in
-                (0 ..< queueCount).forEach { queueIndex in
-                    queues[queueIndex].async { client.send("\(queueIndex)-\(messageIndex)") }
-                }
+            case let .error(error):
+                XCTFail("Should not have received error: \(String(describing: error))")
             }
         }
+        defer { server.close() }
 
-        let receiveMessageEx = expectation(
-            description: "Should have received \(queueCount * messageCount) messages"
-        )
-        receiveMessageEx.expectedFulfillmentCount = queueCount * messageCount
+        wait(for: [openEx], timeout: 0.5)
 
-        try withEchoServer { _, client in
-            let sub = client.sink(
-                receiveCompletion: { _ in },
-                receiveValue: { message in
-                    switch message {
-                    case .success(.open):
-                        sendMessages(client)
-                    case .success(.text):
-                        receiveMessageEx.fulfill()
-                    default:
-                        XCTFail()
-                    }
-                }
-            )
-            defer { sub.cancel() }
+        let isOpen = await client.isOpen
+        XCTAssertTrue(isOpen)
 
-            client.connect()
-            waitForExpectations(timeout: 10)
-            client.close()
-        }
+        await client.close(.normalClosure)
+        wait(for: [closeEx], timeout: 0.5)
     }
+
+//    func testCustom() async throws {
+//        let (server, client) = await makeServerAndClient()
+//
+//        try await Task.sleep(nanoseconds: NSEC_PER_SEC * 10000)
+//        server.close()
+//    }
+
+    func testErrorWhenServerIsUnreachable() async throws {
+        let ex = expectation(description: "Should have errored")
+        let (server, client) = await makeOfflineServerAndClient { event in
+            guard case let .error(error) = event else {
+                return XCTFail("Should not have received \(event)")
+            }
+            XCTAssertEqual(-1004, error?.code)
+            ex.fulfill()
+        }
+        defer { server.close() }
+
+        waitForExpectations(timeout: 0.5)
+
+        let isClosed = await client.isClosed
+        XCTAssertTrue(isClosed)
+    }
+
+    func testErrorWhenRemoteCloses() async throws {
+        var invalidUTF8Bytes = [0x192, 0x193] as [UInt16]
+        let bytes = withUnsafeBytes(of: &invalidUTF8Bytes) { Array($0) }
+        let data = Data(bytes: bytes, count: bytes.count)
+
+        let openEx = expectation(description: "Should have opened")
+        let errorEx = expectation(description: "Should have errored")
+
+        let (server, client) = await makeServerAndClient { event in
+            switch event {
+            case .open:
+                openEx.fulfill()
+
+            case .close:
+                Swift.print("$$$ CLOSED")
+                XCTFail("Should not have closed")
+
+            case let .error(error):
+                Swift.print("$$$ ERROR: \(String(describing: error))")
+                errorEx.fulfill()
+            }
+        }
+        defer { server.close() }
+
+        wait(for: [openEx], timeout: 0.5)
+        let isOpen = await client.isOpen
+        XCTAssertTrue(isOpen)
+
+        try await client.send(.data(data))
+        wait(for: [errorEx], timeout: 0.5)
+//        let isClosed = await client.isClosed
+//        XCTAssertTrue(isClosed)
+    }
+
+    func testEchoPush() async throws {
+        let openEx = expectation(description: "Should have opened")
+        let (server, client) = await makeEchoServerAndClient { event in
+            guard case .open = event else { return }
+            openEx.fulfill()
+        }
+        defer { server.close() }
+
+        wait(for: [openEx], timeout: 0.5)
+
+        try await client.send(.string("hello"))
+        guard case let .string(text) = try await client.receive()
+        else { return XCTFail("Should have received text") }
+
+        XCTAssertEqual("hello", text)
+    }
+
+//    func testEchoPush() throws {
+//        try withEchoServer { _, client in
+//            let message = "hello"
+//            let completion = self.expectNoError()
+//
+//            let sub = client.sink(
+//                receiveCompletion: expectFinished(),
+//                receiveValue: expectValuesAndThen([
+//                    .open: { client.send(message, completionHandler: completion) },
+//                    .text(message): { client.close() },
+//                ])
+//            )
+//            defer { sub.cancel() }
+//
+//            client.connect()
+//            waitForExpectations(timeout: 2)
+//        }
+//    }
+//
+//    func testEchoBinaryPush() throws {
+//        try withEchoServer { _, client in
+//            let message = "hello"
+//            let data = message.data(using: .utf8)!
+//            let completion = self.expectNoError()
+//
+//            let sub = client.sink(
+//                receiveCompletion: expectFinished(),
+//                receiveValue: expectValuesAndThen([
+//                    .open: { client.send(data, completionHandler: completion) },
+//                    .text(message): { client.close() },
+//                ])
+//            )
+//            defer { sub.cancel() }
+//
+//            client.connect()
+//            waitForExpectations(timeout: 2)
+//        }
+//    }
+//
+//    func testJoinLobbyAndEcho() throws {
+//        let joinPush = "[1,1,\"room:lobby\",\"phx_join\",{}]"
+//        let echoPush1 = "[1,2,\"room:lobby\",\"echo\",{\"echo\":\"one\"}]"
+//        let echoPush2 = "[1,3,\"room:lobby\",\"echo\",{\"echo\":\"two\"}]"
+//
+//        let joinReply = "[1,1,\"room:lobby\",\"phx_reply\",{\"response\":{},\"status\":\"ok\"}]"
+//        let echoReply1 =
+//            "[1,2,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"one\"},\"status\":\"ok\"}]"
+//        let echoReply2 =
+//            "[1,3,\"room:lobby\",\"phx_reply\",{\"response\":{\"echo\":\"two\"},\"status\":\"ok\"}]"
+//
+//        let joinCompletion = expectNoError()
+//        let echo1Completion = expectNoError()
+//        let echo2Completion = expectNoError()
+//
+//        try withReplyServer([joinReply, echoReply1, echoReply2]) { _, client in
+//            let sub = client.sink(
+//                receiveCompletion: expectFinished(),
+//                receiveValue: expectValuesAndThen([
+//                    .open: { client.send(joinPush, completionHandler: joinCompletion) },
+//                    .text(joinReply): { client.send(echoPush1, completionHandler: echo1Completion)
+//                    },
+//                    .text(echoReply1): { client.send(echoPush2, completionHandler: echo2Completion)
+//                    },
+//                    .text(echoReply2): { client.close() },
+//                ])
+//            )
+//            defer { sub.cancel() }
+//
+//            client.connect()
+//            waitForExpectations(timeout: 2)
+//        }
+//    }
+//
+//    func testCanSendFromTwoThreadsSimultaneously() throws {
+//        let queueCount = 8
+//        let queues = (0 ..< queueCount).map { DispatchQueue(label: "\($0)") }
+//
+//        let messageCount = 100
+//        let sendMessages: (WebSocket) -> Void = { client in
+//            (0 ..< messageCount).forEach { messageIndex in
+//                (0 ..< queueCount).forEach { queueIndex in
+//                    queues[queueIndex].async { client.send("\(queueIndex)-\(messageIndex)") }
+//                }
+//            }
+//        }
+//
+//        let receiveMessageEx = expectation(
+//            description: "Should have received \(queueCount * messageCount) messages"
+//        )
+//        receiveMessageEx.expectedFulfillmentCount = queueCount * messageCount
+//
+//        try withEchoServer { _, client in
+//            let sub = client.sink(
+//                receiveCompletion: { _ in },
+//                receiveValue: { message in
+//                    switch message {
+//                    case .success(.open):
+//                        sendMessages(client)
+//                    case .success(.text):
+//                        receiveMessageEx.fulfill()
+//                    default:
+//                        XCTFail()
+//                    }
+//                }
+//            )
+//            defer { sub.cancel() }
+//
+//            client.connect()
+//            waitForExpectations(timeout: 10)
+//            client.close()
+//        }
+//    }
 }
 
 private extension WebSocketTests {
-    func withServer(_ block: (WebSocketServer, WebSocket) throws -> Void) throws {
+    func makeServerAndClient(
+        _ onStateChange: @escaping (WebSocketEvent) -> Void = { _ in }
+    ) async -> (WebSocketServer, WebSocket) {
         let port = ports.removeFirst()
         let server = WebSocketServer(port: port, replyProvider: .reply { nil })
-        let client = WebSocket(url: url(port))
-        try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
+        let client = await WebSocket(url: url(port), onStateChange: onStateChange)
+        server.listen()
+        return (server, client)
     }
 
-    func withEchoServer(_ block: (WebSocketServer, WebSocket) throws -> Void) throws {
+    func makeOfflineServerAndClient(
+        _ onStateChange: @escaping (WebSocketEvent) -> Void = { _ in }
+    ) async -> (WebSocketServer, WebSocket) {
+        let port = ports.removeFirst()
+        let server = WebSocketServer(port: port, replyProvider: .reply { nil })
+        let client = await WebSocket(url: url(port), onStateChange: onStateChange)
+        return (server, client)
+    }
+
+    func makeEchoServerAndClient(
+        _ onStateChange: @escaping (WebSocketEvent) -> Void = { _ in }
+    ) async -> (WebSocketServer, WebSocket) {
         let port = ports.removeFirst()
         let server = WebSocketServer(port: port, replyProvider: .echo)
-        let client = WebSocket(url: url(port))
-        try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
+        let client = await WebSocket(url: url(port), onStateChange: onStateChange)
+        server.listen()
+        return (server, client)
     }
 
-    func withReplyServer(
+    func makeReplyServerAndClient(
         _ replies: [String?],
-        _ block: (WebSocketServer, WebSocket) throws -> Void
-    ) throws {
+        _ onStateChange: @escaping (WebSocketEvent) -> Void = { _ in }
+    ) async -> (WebSocketServer, WebSocket) {
         let port = ports.removeFirst()
         var replies = replies
         let provider: () -> String? = { replies.removeFirst() }
         let server = WebSocketServer(port: port, replyProvider: .reply(provider))
-        let client = WebSocket(url: url(port))
-        try withExtendedLifetime((server, client)) { server.listen(); try block(server, client) }
-    }
-}
-
-private extension WebSocketTests {
-    func expectValueAndThen<T: Hashable, E: Error>(
-        _ value: T,
-        _ block: @escaping @autoclosure () -> Void
-    ) -> (Result<T, E>) -> Void {
-        expectValuesAndThen([value: block])
-    }
-
-    func expectValuesAndThen<
-        T: Hashable,
-        E: Error
-    >(_ values: [T: () -> Void]) -> (Result<T, E>) -> Void {
-        var values = values
-        let expectation = self
-            .expectation(description: "Should have received \(String(describing: values))")
-        return { (result: Result<T, E>) in
-            guard case let .success(value) = result else {
-                return XCTFail("Unexpected result: \(String(describing: result))")
-            }
-
-            let block = values.removeValue(forKey: value)
-            XCTAssertNotNil(block)
-            block?()
-
-            if values.isEmpty {
-                expectation.fulfill()
-            }
-        }
-    }
-
-    func expectFinished<E: Error>() -> (Subscribers.Completion<E>) -> Void {
-        let expectation = self.expectation(description: "Should have finished successfully")
-        return { completion in
-            guard case Subscribers.Completion.finished = completion else { return }
-            expectation.fulfill()
-        }
-    }
-
-    func expectFailure<E>() -> (Subscribers.Completion<E>) -> Void where E: Error {
-        let expectation = self.expectation(description: "Should have failed")
-        return { completion in
-            guard case Subscribers.Completion.failure = completion else { return }
-            expectation.fulfill()
-        }
-    }
-
-    func expectNoError() -> (Error?) -> Void {
-        let expectation = self.expectation(description: "Should not have had an error")
-        return { error in
-            XCTAssertNil(error)
-            expectation.fulfill()
-        }
+        let client = await WebSocket(url: url(port), onStateChange: onStateChange)
+        server.listen()
+        return (server, client)
     }
 }
