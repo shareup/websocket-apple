@@ -11,6 +11,15 @@
         }
       },
       {
+        "package": "swift-nio-ssl",
+        "repositoryURL": "https://github.com/apple/swift-nio-ssl.git",
+        "state": {
+          "branch": null,
+          "revision": "b5260a31c2a72a89fa684f5efb3054d8725a2316",
+          "version": "2.18.0"
+        }
+      },
+      {
         "package": "Synchronized",
         "repositoryURL": "https://github.com/shareup/synchronized.git",
         "state": {

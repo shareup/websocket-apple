@@ -17,7 +17,9 @@ let package = Package(
             url: "https://github.com/shareup/synchronized.git",
             from: "3.0.0"
         ),
-        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.39.0")],
+        .package(name: "swift-nio", url: "https://github.com/apple/swift-nio.git", from: "2.39.0"),
+        .package(name: "swift-nio-ssl", url: "https://github.com/apple/swift-nio-ssl.git", from: "2.18.0"),
+    ],
     targets: [
         .target(
             name: "WebSocket",
@@ -28,6 +30,8 @@ let package = Package(
                 .product(name: "NIO", package: "swift-nio"),
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
                 "WebSocket",
             ])
     ]
