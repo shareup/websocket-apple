@@ -72,7 +72,7 @@ final actor SystemWebSocket: Publisher {
             .receive(on: subscriberQueue)
             .receive(subscriber: subscriber)
     }
-    
+
     func open(timeout: TimeInterval? = nil) async throws {
         switch state {
         case .open:
@@ -83,7 +83,10 @@ final actor SystemWebSocket: Publisher {
 
         case .unopened, .connecting:
             do {
-                try await withThrowingTaskGroup(of: Void.self) { (group: inout ThrowingTaskGroup<Void, Error>) in
+                try await withThrowingTaskGroup(
+                    of: Void
+                        .self
+                ) { (group: inout ThrowingTaskGroup<Void, Error>) in
                     _ = group.addTaskUnlessCancelled { [weak self] in
                         guard let self = self else { return }
                         let _timeout = UInt64(timeout ?? self.options.timeoutIntervalForRequest)
@@ -98,7 +101,7 @@ final actor SystemWebSocket: Publisher {
                         }
                     }
 
-                    let _ = try await group.next()
+                    _ = try await group.next()
                     group.cancelAll()
                 }
             } catch {
@@ -522,7 +525,11 @@ private extension SystemWebSocket {
         }
     }
 
-    func handleUnknownMessage(data: Data?, context: NWConnection.ContentContext?, error: NWError?) {
+    func handleUnknownMessage(
+        data: Data?,
+        context: NWConnection.ContentContext?,
+        error: NWError?
+    ) {
         func describeInputs() -> String {
             String(describing: String(data: data ?? Data(), encoding: .utf8)) + " " +
                 String(describing: context) + " " + String(describing: error)

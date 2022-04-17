@@ -1,6 +1,6 @@
+import Combine
 import Foundation
 import Network
-import Combine
 import WebSocket
 
 enum WebSocketServerError: Error {
@@ -119,10 +119,10 @@ private extension WebSocketServer {
                 content: content,
                 contentContext: context,
                 isComplete: true,
-                completion: .contentProcessed({ [weak self] error in
+                completion: .contentProcessed { [weak self] error in
                     guard let _ = error else { return }
                     self?.closeConnection(connection)
-                })
+                }
             )
         }
     }
@@ -138,9 +138,9 @@ private extension WebSocketServer {
             content: nil,
             contentContext: .finalMessage,
             isComplete: true,
-            completion: .contentProcessed({ _ in
+            completion: .contentProcessed { _ in
                 connection.cancel()
-            })
+            }
         )
     }
 
@@ -156,14 +156,14 @@ private extension WebSocketServer {
             self.connections.append(newConnection)
 
             func receive() {
-                newConnection.receiveMessage { [weak self] (data, context, _, error) in
+                newConnection.receiveMessage { [weak self] data, context, _, error in
                     guard let self = self else { return }
                     guard error == nil else { return self.closeConnection(newConnection) }
 
                     guard let data = data,
                           let context = context,
                           let _metadata = context.protocolMetadata.first,
-                          let metadata =  _metadata as? NWProtocolWebSocket.Metadata
+                          let metadata = _metadata as? NWProtocolWebSocket.Metadata
                     else { return }
 
                     switch metadata.opcode {

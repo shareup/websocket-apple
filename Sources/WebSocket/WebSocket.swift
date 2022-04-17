@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 public typealias WebSocketOnOpen = () -> Void
 public typealias WebSocketOnClose = (WebSocketCloseResult) -> Void
@@ -27,8 +27,8 @@ public struct WebSocket {
     public var messagesPublisher: () -> AnyPublisher<WebSocketMessage, Never>
 
     public init(
-        onOpen: @escaping ((@escaping WebSocketOnOpen)) async -> Void = { _ in },
-        onClose: @escaping ((@escaping WebSocketOnClose)) async -> Void = { _ in },
+        onOpen: @escaping (@escaping WebSocketOnOpen) async -> Void = { _ in },
+        onClose: @escaping (@escaping WebSocketOnClose) async -> Void = { _ in },
         open: @escaping (TimeInterval?) async throws -> Void = { _ in },
         close: @escaping (WebSocketCloseCode) async throws -> Void = { _ in },
         send: @escaping (WebSocketMessage) async throws -> Void = { _ in },

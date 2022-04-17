@@ -106,7 +106,7 @@ class SystemWebSocketTests: XCTestCase {
         secondCloseEx.isInverted = true
 
         let (server, client) = await makeServerAndClient(
-            onClose: { result in
+            onClose: { _ in
                 closeCount += 1
                 if closeCount == 1 {
                     firstCloseEx.fulfill()
@@ -292,7 +292,8 @@ class SystemWebSocketTests: XCTestCase {
             XCTAssertEqual(expected, message)
 
             if let messageToSend = messagesToSend.first,
-               let messageToReceive = messagesToReceive.first {
+               let messageToReceive = messagesToReceive.first
+            {
                 try await client.send(messageToSend)
                 subject.send(.message(messageToReceive))
             } else {
@@ -322,7 +323,11 @@ private extension SystemWebSocketTests {
     ) async -> (WebSocketServer, SystemWebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: port, outputPublisher: subject)
-        let client = try! await SystemWebSocket(url: url(port), onOpen: onOpen, onClose: onClose)
+        let client = try! await SystemWebSocket(
+            url: url(port),
+            onOpen: onOpen,
+            onClose: onClose
+        )
         return (server, client)
     }
 
@@ -332,7 +337,11 @@ private extension SystemWebSocketTests {
     ) async -> (WebSocketServer, SystemWebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: 1, outputPublisher: empty)
-        let client = try! await SystemWebSocket(url: url(port), onOpen: onOpen, onClose: onClose)
+        let client = try! await SystemWebSocket(
+            url: url(port),
+            onOpen: onOpen,
+            onClose: onClose
+        )
         return (server, client)
     }
 
@@ -342,7 +351,11 @@ private extension SystemWebSocketTests {
     ) async -> (WebSocketServer, WebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: port, outputPublisher: subject)
-        let client = try! await SystemWebSocket(url: url(port), onOpen: onOpen, onClose: onClose)
+        let client = try! await SystemWebSocket(
+            url: url(port),
+            onOpen: onOpen,
+            onClose: onClose
+        )
         return (server, try! await .system(client))
     }
 }

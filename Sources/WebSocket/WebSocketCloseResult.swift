@@ -5,4 +5,3 @@ public typealias WebSocketCloseResult = Result<(code: WebSocketCloseCode, reason
 internal let normalClosure: WebSocketCloseResult = .success((.normalClosure, nil))
 internal let abnormalClosure: WebSocketCloseResult = .success((.abnormalClosure, nil))
 internal let closureWithError: (Error) -> WebSocketCloseResult = { e in .failure(e) }
-
