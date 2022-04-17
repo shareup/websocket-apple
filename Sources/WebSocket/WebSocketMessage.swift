@@ -1,6 +1,7 @@
 import Foundation
+import Network
 
-/// An enumeration of the types of messages that can be received.
+/// An enumeration of the types of messages that can be sent or received.
 public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConvertible, Hashable {
     /// A WebSocket message that contains a block of data.
     case data(Data)
@@ -15,5 +16,5 @@ public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConverti
         }
     }
 
-    public var debugDescription: String { self.description }
+    public var debugDescription: String { description }
 }

@@ -6,7 +6,7 @@ extension URLSessionWebSocketTask.Message: CustomDebugStringConvertible {
         case let .string(text):
             return text
         case let .data(data):
-            return "\(data.count) bytes"
+            return "<\(data.count) bytes>"
         @unknown default:
             assertionFailure("Unsupported message: \(self)")
             return "<unknown>"
