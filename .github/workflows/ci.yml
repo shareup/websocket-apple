@@ -1,15 +1,12 @@
-name: Test
-on: [push, pull_request]
+on: push
+
 jobs:
   test:
-    name: Test
     runs-on: macos-latest
+    
     steps:
-      uses: actions/checkout@v2
+      - uses: actions/checkout@v2
       # Available environments: https://github.com/actions/virtual-environments/blob/main/images/macos/macos-12-Readme.md#xcode
-      - name: Switch Xcode to 13.3
-        run: xcversion select 13.3
-      - name: Resolve package dependencies
-        run: swift package resolve
-      - name: Test
-        run: swift test --skip-update
+      - run: xcversion select 13.3
+      - run: swift package resolve
+      - run: swift test --skip-update
