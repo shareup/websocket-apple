@@ -59,6 +59,7 @@ final actor SystemWebSocket: Publisher {
     deinit {
         switch state {
         case let .connecting(connection), let .open(connection):
+            subject.send(completion: .finished)
             connection.forceCancel()
         default:
             break
@@ -516,7 +517,6 @@ private extension SystemWebSocket {
     func handleMessageWithError(_ error: NWError) {
         switch state {
         case let .connecting(conn), let .open(conn):
-
             startClosing(connection: conn, error: error)
 
         case .unopened, .closing, .closed:

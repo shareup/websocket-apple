@@ -236,6 +236,66 @@ class SystemWebSocketTests: XCTestCase {
         }
     }
 
+    @available(iOS 15.0, macOS 12.0, *)
+    func testPublisherFinishesOnClose() async throws {
+        let (server, client) = await makeServerAndClient()
+        defer { server.forceClose() }
+
+        try await client.open()
+
+        let task = Task.detached {
+            var count = 1
+            repeat {
+                await self.subject.send(.message(.text(String(count))))
+                count += 1
+                try await Task.sleep(nanoseconds: 20 * NSEC_PER_MSEC)
+            } while !Task.isCancelled
+        }
+
+        var receivedMessages = 0
+        for await message in client.values {
+            guard let _ = message.stringValue else { return XCTFail() }
+            receivedMessages += 1
+            if receivedMessages == 3 {
+                try await client.close()
+            }
+        }
+
+        XCTAssertEqual(3, receivedMessages)
+
+        task.cancel()
+    }
+
+    @available(iOS 15.0, macOS 12.0, *)
+    func testPublisherFinishesOnCloseFromServer() async throws {
+        let (server, client) = await makeServerAndClient()
+        defer { server.forceClose() }
+
+        try await client.open()
+
+        let task = Task.detached {
+            var count = 1
+            repeat {
+                await self.subject.send(.message(.text(String(count))))
+                count += 1
+                try await Task.sleep(nanoseconds: 20 * NSEC_PER_MSEC)
+            } while !Task.isCancelled
+        }
+
+        var receivedMessages = 0
+        for await message in client.values {
+            guard let _ = message.stringValue else { return XCTFail() }
+            receivedMessages += 1
+            if receivedMessages == 3 {
+                subject.send(.die)
+            }
+        }
+
+        XCTAssertEqual(3, receivedMessages)
+
+        task.cancel()
+    }
+
     func testWrappedSystemWebSocket() async throws {
         let openEx = expectation(description: "Should have opened")
         let closeEx = expectation(description: "Should have closed")
