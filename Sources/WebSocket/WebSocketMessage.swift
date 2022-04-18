@@ -18,3 +18,15 @@ public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConverti
 
     public var debugDescription: String { description }
 }
+
+public extension WebSocketMessage {
+    var stringValue: String? {
+        switch self {
+        case let .data(data):
+            return String(data: data, encoding: .utf8)
+
+        case let .text(text):
+            return text
+        }
+    }
+}
