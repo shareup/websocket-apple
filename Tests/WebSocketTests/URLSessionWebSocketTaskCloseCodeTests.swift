@@ -1,5 +1,4 @@
 @testable import WebSocket
-import WebSocketProtocol
 import XCTest
 
 class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
@@ -7,13 +6,15 @@ class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
         let urlSessionCloseCodes: [URLSessionWebSocketTask.CloseCode] = [
             .invalid, .normalClosure, .goingAway, .protocolError, .unsupportedData,
             .noStatusReceived, .abnormalClosure, .invalidFramePayloadData, .policyViolation,
-            .messageTooBig, .mandatoryExtensionMissing, .internalServerError, .tlsHandshakeFailure,
+            .messageTooBig, .mandatoryExtensionMissing, .internalServerError,
+            .tlsHandshakeFailure,
         ]
 
         let closeCodes: [WebSocketCloseCode] = [
             .invalid, .normalClosure, .goingAway, .protocolError, .unsupportedData,
             .noStatusReceived, .abnormalClosure, .invalidFramePayloadData, .policyViolation,
-            .messageTooBig, .mandatoryExtensionMissing, .internalServerError, .tlsHandshakeFailure,
+            .messageTooBig, .mandatoryExtensionMissing, .internalServerError,
+            .tlsHandshakeFailure,
         ]
 
         zip(urlSessionCloseCodes, closeCodes).forEach { urlSessionCloseCode, closeCode in

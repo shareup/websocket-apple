@@ -1,0 +1,12 @@
+on: push
+
+jobs:
+  test:
+    runs-on: macos-12
+    
+    steps:
+      - uses: actions/checkout@v2
+      # Available environments: https://github.com/actions/virtual-environments/blob/main/images/macos/macos-12-Readme.md#xcode
+      - run: xcversion select 13.3
+      - run: swift package resolve
+      - run: swift test --skip-update
