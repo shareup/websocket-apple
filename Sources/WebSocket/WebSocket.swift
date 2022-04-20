@@ -4,12 +4,14 @@ import Foundation
 public typealias WebSocketOnOpen = () -> Void
 public typealias WebSocketOnClose = (WebSocketCloseResult) -> Void
 
-public struct WebSocket {
+public struct WebSocket: Identifiable {
+    public var id: Int
+
     /// Sets a closure to be called when the WebSocket connects successfully.
-    public var onOpen: (@escaping WebSocketOnOpen) async -> Void
+    public var onOpen: WebSocketOnOpen
 
     /// Sets a closure to be called when the WebSocket closes.
-    public var onClose: (@escaping WebSocketOnClose) async -> Void
+    public var onClose: WebSocketOnClose
 
     /// Opens the WebSocket connect with an optional timeout. After this function
     /// is awaited, the WebSocket connection is open ready to be used. If the
@@ -17,7 +19,7 @@ public struct WebSocket {
     public var open: (TimeInterval?) async throws -> Void
 
     /// Sends a close frame to the server with the given close code.
-    public var close: (WebSocketCloseCode) async throws -> Void
+    public var close: (WebSocketCloseCode, TimeInterval?) async throws -> Void
 
     /// Sends a text or binary message.
     public var send: (WebSocketMessage) async throws -> Void
@@ -27,15 +29,17 @@ public struct WebSocket {
     public var messagesPublisher: () -> AnyPublisher<WebSocketMessage, Never>
 
     public init(
-        onOpen: @escaping (@escaping WebSocketOnOpen) async -> Void = { _ in },
-        onClose: @escaping (@escaping WebSocketOnClose) async -> Void = { _ in },
+        id: Int,
+        onOpen: @escaping WebSocketOnOpen = {},
+        onClose: @escaping WebSocketOnClose = { _ in },
         open: @escaping (TimeInterval?) async throws -> Void = { _ in },
-        close: @escaping (WebSocketCloseCode) async throws -> Void = { _ in },
+        close: @escaping (WebSocketCloseCode, TimeInterval?) async throws -> Void = { _, _ in },
         send: @escaping (WebSocketMessage) async throws -> Void = { _ in },
         messagesPublisher: @escaping () -> AnyPublisher<WebSocketMessage, Never> = {
             Empty<WebSocketMessage, Never>(completeImmediately: false).eraseToAnyPublisher()
         }
     ) {
+        self.id = id
         self.onOpen = onOpen
         self.onClose = onClose
         self.open = open
@@ -51,9 +55,14 @@ public extension WebSocket {
         try await open(nil)
     }
 
-    /// Calls `WebSocket.close(closeCode: .goingAway)`.
+    /// Calls `WebSocket.close(.normalClosure, nil)`.
     func close() async throws {
-        try await close(.goingAway)
+        try await close(.normalClosure, nil)
+    }
+
+    /// Calls `WebSocket.close(.normalClosure, timeout)`.
+    func close(timeout: TimeInterval) async throws {
+        try await close(.normalClosure, timeout)
     }
 
     /// The WebSocket's received messages as an asynchronous stream.
@@ -100,10 +109,11 @@ public extension WebSocket {
     // This is only intended for use in tests.
     internal static func system(_ ws: SystemWebSocket) async throws -> Self {
         Self(
-            onOpen: { onOpen in await ws.onOpen(onOpen) },
-            onClose: { onClose in await ws.onClose(onClose) },
+            id: Int(bitPattern: ObjectIdentifier(ws)),
+            onOpen: ws.onOpen,
+            onClose: ws.onClose,
             open: { timeout in try await ws.open(timeout: timeout) },
-            close: { code in try await ws.close(code) },
+            close: { code, timeout in try await ws.close(code, timeout: timeout) },
             send: { message in try await ws.send(message) },
             messagesPublisher: { ws.eraseToAnyPublisher() }
         )

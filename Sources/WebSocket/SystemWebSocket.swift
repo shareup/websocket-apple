@@ -17,10 +17,11 @@ final actor SystemWebSocket: Publisher {
         return true
     } }
 
-    private let url: URL
-    private let options: WebSocketOptions
-    private var _onOpen: WebSocketOnOpen
-    private var _onClose: WebSocketOnClose
+    nonisolated let url: URL
+    nonisolated let options: WebSocketOptions
+    nonisolated let onOpen: WebSocketOnOpen
+    nonisolated let onClose: WebSocketOnClose
+
     private var state: WebSocketState = .unopened
 
     private var messageIndex = 0 // Used to identify sent messages
@@ -51,8 +52,8 @@ final actor SystemWebSocket: Publisher {
     ) async throws {
         self.url = url
         self.options = options
-        _onOpen = onOpen
-        _onClose = onClose
+        self.onOpen = onOpen
+        self.onClose = onClose
         try connect()
     }
 
@@ -166,7 +167,10 @@ final actor SystemWebSocket: Publisher {
         }
     }
 
-    func close(_ closeCode: WebSocketCloseCode = .normalClosure) async throws {
+    func close(
+        _ closeCode: WebSocketCloseCode = .normalClosure,
+        timeout: TimeInterval? = nil
+    ) async throws {
         switch state {
         case let .connecting(conn), let .open(conn):
             os_log(
@@ -191,7 +195,35 @@ final actor SystemWebSocket: Publisher {
                     }
                 )
             }
+            
             startClosing(connection: conn, error: closeCode.error)
+
+            do {
+                try await withThrowingTaskGroup(
+                    of: Void
+                        .self
+                ) { (group: inout ThrowingTaskGroup<Void, Error>) in
+                    _ = group.addTaskUnlessCancelled { [weak self] in
+                        guard let self = self else { return }
+                        let _timeout = UInt64(timeout ?? self.options.timeoutIntervalForRequest)
+                        try await Task.sleep(nanoseconds: _timeout * NSEC_PER_SEC)
+                        throw CancellationError()
+                    }
+
+                    _ = group.addTaskUnlessCancelled { [weak self] in
+                        guard let self = self else { return }
+                        while await !self.isClosed {
+                            try await Task.sleep(nanoseconds: 10 * NSEC_PER_MSEC)
+                        }
+                    }
+
+                    _ = try await group.next()
+                    group.cancelAll()
+                }
+            } catch {
+                doClose()
+                throw error
+            }
 
         case .unopened, .closing, .closed:
             doClose()
@@ -208,14 +240,6 @@ final actor SystemWebSocket: Publisher {
         )
 
         doClose()
-    }
-
-    func onOpen(_ block: @escaping WebSocketOnOpen) {
-        _onOpen = block
-    }
-
-    func onClose(_ block: @escaping WebSocketOnClose) {
-        _onClose = block
     }
 }
 
@@ -254,7 +278,7 @@ private extension SystemWebSocket {
         )
 
         state = .open(connection)
-        _onOpen()
+        onOpen()
         connection.receiveMessage(completion: onReceiveMessage)
     }
 
@@ -277,22 +301,22 @@ private extension SystemWebSocket {
         case .closing(nil):
             state = .closed(nil)
             subject.send(completion: .finished)
-            _onClose(normalClosure)
+            onClose(normalClosure)
 
         case let .closing(.some(err)):
             state = .closed(.connectionError(err))
             subject.send(completion: .finished)
-            _onClose(closureWithError(err))
+            onClose(closureWithError(err))
 
         case .unopened:
             state = .closed(nil)
             subject.send(completion: .finished)
-            _onClose(abnormalClosure)
+            onClose(abnormalClosure)
 
         case let .connecting(conn), let .open(conn):
             state = .closed(nil)
             subject.send(completion: .finished)
-            _onClose(abnormalClosure)
+            onClose(abnormalClosure)
             conn.forceCancel()
 
         case .closed:
@@ -315,22 +339,22 @@ private extension SystemWebSocket {
         case let .closing(.some(err)):
             state = .closed(.connectionError(err))
             subject.send(completion: .finished)
-            _onClose(closureWithError(err))
+            onClose(closureWithError(err))
 
         case .closing(nil):
             state = .closed(error)
             subject.send(completion: .finished)
-            _onClose(closureWithError(error))
+            onClose(closureWithError(error))
 
         case .unopened:
             state = .closed(error)
             subject.send(completion: .finished)
-            _onClose(closureWithError(error))
+            onClose(closureWithError(error))
 
         case let .connecting(conn), let .open(conn):
             state = .closed(nil)
             subject.send(completion: .finished)
-            _onClose(closureWithError(error))
+            onClose(closureWithError(error))
             conn.forceCancel()
 
         case .closed:
