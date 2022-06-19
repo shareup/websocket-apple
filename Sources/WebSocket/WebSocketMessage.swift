@@ -11,7 +11,7 @@ public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConverti
 
     public var description: String {
         switch self {
-        case let .data(data): return "\(data.count) bytes"
+        case let .data(data): return String(decoding: data.prefix(100), as: UTF8.self)
         case let .text(text): return text
         }
     }

@@ -195,7 +195,7 @@ final actor SystemWebSocket: Publisher {
                     }
                 )
             }
-            
+
             startClosing(connection: conn, error: closeCode.error)
 
             do {
