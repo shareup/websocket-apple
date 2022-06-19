@@ -85,6 +85,18 @@ final actor SystemWebSocket: Publisher {
 
         case .unopened, .connecting:
             do {
+                // I tried to use `withCheckedThrowingContinuation()` instead
+                // of the `while !isOpen { Task.sleep() }` hack here, but
+                // `testWebSocketCannotBeOpenedTwice()` deadlocked after calling
+                // the second `try await client.open()`. The program never
+                // progressed past the second call to
+                // `withCheckedThrowingContinuation()` regardless of what I changed.
+                // This issue seemed similar to this reported issue, which
+                // talks about issues with actors and storing continuations:
+                //
+                // https://github.com/apple/swift/issues/57188
+                //
+                // Given that, I decided to keep this version.
                 try await withThrowingTaskGroup(
                     of: Void
                         .self
