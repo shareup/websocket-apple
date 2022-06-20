@@ -5,28 +5,107 @@ import Synchronized
 private typealias WaiterContinuation = CheckedContinuation<Void, Error>
 
 final class WebSocketWaiter: Sendable {
-    private let resumptions = Locked(Resumptions())
+    private let state = Locked(State())
 
-    func open(
-        timeout: TimeInterval,
-        isOpen: @escaping @Sendable () async -> Bool
-    ) async throws {
-        try await add(\Resumptions.opens, timeout: timeout, doubleCheck: isOpen)
+    func open(timeout: TimeInterval) async throws {
+        let id = UUID().uuidString
+        try await withTaskCancellationHandler(
+            operation: {
+                try await withCheckedThrowingContinuation { (cont: WaiterContinuation) in
+                    let timer = DispatchTimer(fireAt: deadline(timeout)) { [weak self] in
+                        let res = self?.state.access { $0.opens.remove(id) }
+                        res?.timer.invalidate()
+                        res?.continuation.resume(throwing: CancellationError())
+                    }
+
+                    let res = Resumption(id, cont, timer)
+                    let block: (() -> Void)? = state.access { state in
+                        guard state.isUnopened else {
+                            switch state.connection {
+                            case .unopened:
+                                return {
+                                    timer.invalidate()
+                                    preconditionFailure()
+                                }
+
+                            case .open:
+                                return {
+                                    timer.invalidate()
+                                    cont.resume()
+                                }
+
+                            case let .closed(error):
+                                return {
+                                    timer.invalidate()
+                                    cont.resume(throwing: error ?? WebSocketError.closed)
+                                }
+                            }
+                        }
+
+                        state.opens.append(res)
+                        return nil
+                    }
+
+                    block?()
+                }
+            },
+            onCancel: { [weak self] in
+                let res = self?.state.access { $0.opens.remove(id) }
+                res?.timer.invalidate()
+                res?.continuation.resume(throwing: CancellationError())
+            }
+        )
     }
 
-    func close(
-        timeout: TimeInterval,
-        isClosed: @escaping @Sendable () async -> Bool
-    ) async throws {
-        try await add(\Resumptions.closes, timeout: timeout, doubleCheck: isClosed)
+    func close(timeout: TimeInterval) async throws {
+        let id = UUID().uuidString
+        try await withTaskCancellationHandler(
+            operation: {
+                try await withCheckedThrowingContinuation { (cont: WaiterContinuation) in
+                    let timer = DispatchTimer(fireAt: deadline(timeout)) { [weak self] in
+                        let res = self?.state.access { $0.closes.remove(id) }
+                        res?.timer.invalidate()
+                        res?.continuation.resume(throwing: CancellationError())
+                    }
+
+                    let res = Resumption(id, cont, timer)
+                    let block: (() -> Void)? = state.access { state in
+                        if case let .closed(error) = state.connection {
+                            return {
+                                timer.invalidate()
+                                if let error = error {
+                                    cont.resume(throwing: error)
+                                } else {
+                                    cont.resume()
+                                }
+                            }
+                        } else {
+                            state.closes.append(res)
+                            return nil
+                        }
+                    }
+
+                    block?()
+                }
+            },
+            onCancel: { [weak self] in
+                let res = self?.state.access { $0.opens.remove(id) }
+                res?.timer.invalidate()
+                res?.continuation.resume(throwing: CancellationError())
+            }
+        )
     }
 
     func didOpen() {
-        let opens: [Resumption] = resumptions.access { res in
-            let opens = res.opens
-            res.opens.removeAll()
+        let opens: [Resumption] = state.access { state in
+            precondition(state.isUnopened)
+            state.connection = .open
+
+            let opens = state.opens
+            state.opens.removeAll()
             return opens
         }
+
         opens.forEach {
             $0.timer.invalidate()
             $0.continuation.resume()
@@ -34,13 +113,16 @@ final class WebSocketWaiter: Sendable {
     }
 
     func didClose(error: WebSocketError?) {
-        let (opens, closes): ([Resumption], [Resumption]) = resumptions.access { res in
-            let opens = res.opens
-            let closes = res.closes
-            res.opens.removeAll()
-            res.closes.removeAll()
+        let (opens, closes): ([Resumption], [Resumption]) = state.access { state in
+            state.connection = .closed(error)
+
+            let opens = state.opens
+            let closes = state.closes
+            state.opens.removeAll()
+            state.closes.removeAll()
             return (opens, closes)
         }
+
         opens.forEach { open in
             open.timer.invalidate()
             open.continuation.resume(throwing: error ?? WebSocketError.closed)
@@ -56,11 +138,13 @@ final class WebSocketWaiter: Sendable {
     }
 
     func cancelAll() {
-        let resumptions: [Resumption] = resumptions.access { res in
-            let opens = res.opens
-            let closes = res.closes
-            res.opens.removeAll()
-            res.closes.removeAll()
+        let resumptions: [Resumption] = state.access { state in
+            state.connection = .closed(CancellationError())
+
+            let opens = state.opens
+            let closes = state.closes
+            state.opens.removeAll()
+            state.closes.removeAll()
             return opens + closes
         }
         resumptions.forEach { res in
@@ -71,51 +155,6 @@ final class WebSocketWaiter: Sendable {
 }
 
 private extension WebSocketWaiter {
-    private func add(
-        _ keyPath: WritableKeyPath<Resumptions, [Resumption]>,
-        timeout: TimeInterval,
-        doubleCheck: @escaping @Sendable () async -> Bool
-    ) async throws {
-        let id = UUID().uuidString
-        try await withTaskCancellationHandler(
-            operation: {
-                try await withCheckedThrowingContinuation { (cont: WaiterContinuation) in
-                    let timer = DispatchTimer(fireAt: deadline(timeout)) { [weak self] in
-                        let res = self?.resumptions
-                            .access { $0[keyPath: keyPath].remove(id) }
-                        res?.timer.invalidate()
-                        res?.continuation.resume(throwing: CancellationError())
-                    }
-
-                    let res = Resumption(id, cont, timer)
-                    resumptions.access { $0[keyPath: keyPath].append(res) }
-
-                    Task {
-                        // There's a race condition where the state may have
-                        // changed before the resumption was added, which means
-                        // the continuation would not be resumed until it
-                        // times out. This acts as a double-check to make sure
-                        // we resume the continuation if the state has already
-                        // changed.
-                        if !Task.isCancelled, await doubleCheck() {
-                            let res = resumptions.access { res in
-                                res[keyPath: keyPath].remove(id)
-                            }
-                            res?.timer.invalidate()
-                            res?.continuation.resume()
-                        }
-                    }
-                }
-
-            },
-            onCancel: { [weak self] in
-                let res = self?.resumptions.access { $0[keyPath: keyPath].remove(id) }
-                res?.timer.invalidate()
-                res?.continuation.resume(throwing: CancellationError())
-            }
-        )
-    }
-
     private func deadline(_ timeout: TimeInterval) -> DispatchTime {
         let _timeout = max(timeout, 0.01)
         let nanoseconds = Int(_timeout * Double(NSEC_PER_SEC))
@@ -135,9 +174,32 @@ private struct Resumption: Identifiable, Sendable {
     }
 }
 
-private struct Resumptions: Sendable {
+private struct State: Sendable {
+    enum Connection {
+        case unopened
+        case open
+        case closed(Error?)
+    }
+
+    var connection: Connection = .unopened
+
     var opens: [Resumption] = []
     var closes: [Resumption] = []
+
+    var isUnopened: Bool {
+        guard case .unopened = connection else { return false }
+        return true
+    }
+
+    var isOpen: Bool {
+        guard case .open = connection else { return false }
+        return true
+    }
+
+    var isClosed: Bool {
+        guard case .closed = connection else { return false }
+        return true
+    }
 }
 
 private extension Array where Element == Resumption {

@@ -9,7 +9,7 @@ final class WebSocketWaiterTests: XCTestCase {
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                try await socket.waiter.open(timeout: 0.5) { await socket.isOpen }
+                try await socket.waiter.open(timeout: 0.5)
                 didOpen.access { $0 = true }
             }
 
@@ -30,7 +30,7 @@ final class WebSocketWaiterTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 do {
-                    try await socket.waiter.open(timeout: 0.5) { await socket.isOpen }
+                    try await socket.waiter.open(timeout: 0.5)
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
@@ -58,7 +58,7 @@ final class WebSocketWaiterTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             (0..<100).forEach { i in
                 group.addTask {
-                    try await socket.waiter.open(timeout: 0.5) { await socket.isOpen }
+                    try await socket.waiter.open(timeout: 0.5)
                     openCount.access { $0 += 1 }
                 }
             }
@@ -77,7 +77,7 @@ final class WebSocketWaiterTests: XCTestCase {
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
-                try await socket.waiter.close(timeout: 0.5) { await socket.isClosed }
+                try await socket.waiter.close(timeout: 0.5)
                 didClose.access { $0 = true }
             }
 
@@ -98,7 +98,7 @@ final class WebSocketWaiterTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 do {
-                    try await socket.waiter.close(timeout: 0.5) { await socket.isClosed }
+                    try await socket.waiter.close(timeout: 0.5)
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
@@ -126,7 +126,7 @@ final class WebSocketWaiterTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             (0..<100).forEach { i in
                 group.addTask {
-                    try await socket.waiter.close(timeout: 0.5) { await socket.isClosed }
+                    try await socket.waiter.close(timeout: 0.5)
                     closeCount.access { $0 += 1 }
                 }
             }
@@ -147,7 +147,7 @@ final class WebSocketWaiterTests: XCTestCase {
         try await withThrowingTaskGroup(of: Void.self) { group in
             group.addTask {
                 do {
-                    try await socket.waiter.open(timeout: 0.5) { await socket.isOpen }
+                    try await socket.waiter.open(timeout: 0.5)
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
@@ -160,7 +160,7 @@ final class WebSocketWaiterTests: XCTestCase {
 
             group.addTask {
                 do {
-                    try await socket.waiter.close(timeout: 0.5) { await socket.isClosed }
+                    try await socket.waiter.close(timeout: 0.5)
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
@@ -185,13 +185,14 @@ final class WebSocketWaiterTests: XCTestCase {
     func testMultipleOpensAndClosesAllFailWithError() async throws {
         let socket = Socket()
         let openCount = Locked(0)
-        let closeCount = Locked(0)
+        let normalCloseCount = Locked(0)
+        let closeWithErrorCount = Locked(0)
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             (0..<50).forEach { _ in
                 group.addTask {
                     do {
-                        try await socket.waiter.open(timeout: 0.5) { await socket.isOpen }
+                        try await socket.waiter.open(timeout: 1)
                         XCTFail()
                     } catch {
                         XCTAssertEqual(
@@ -206,14 +207,17 @@ final class WebSocketWaiterTests: XCTestCase {
             (0..<50).forEach { _ in
                 group.addTask {
                     do {
-                        try await socket.waiter.close(timeout: 0.5) { await socket.isClosed }
-                        XCTFail()
+                        try await socket.waiter.close(timeout: 0.5)
+                        // If the WebSocket closes before `waiter.close()` is called,
+                        // then `socket.isClosed` will return `true`, meaning the close will
+                        // appear normal. This is expected behavior.
+                        normalCloseCount.access { $0 += 1}
                     } catch {
                         XCTAssertEqual(
                             WebSocketError.receiveUnknownMessageType,
                             error as? WebSocketError
                         )
-                        closeCount.access { $0 += 1 }
+                        closeWithErrorCount.access { $0 += 1 }
                     }
                 }
             }
@@ -226,7 +230,8 @@ final class WebSocketWaiterTests: XCTestCase {
         }
 
         XCTAssertEqual(50, openCount.access { $0 })
-        XCTAssertEqual(50, closeCount.access { $0 })
+        let closeCount = normalCloseCount.access { $0 } + closeWithErrorCount.access { $0 }
+        XCTAssertEqual(50, closeCount)
     }
 }
 

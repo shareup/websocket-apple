@@ -89,7 +89,7 @@ final actor SystemWebSocket: Publisher {
         case .unopened, .connecting:
             do {
                 let _timeout = timeout ?? options.timeoutIntervalForRequest
-                try await waiter.open(timeout: _timeout) { await self.isOpen }
+                try await waiter.open(timeout: _timeout) 
             } catch {
                 doClose()
                 throw error
@@ -183,7 +183,7 @@ final actor SystemWebSocket: Publisher {
             do {
                 startClosing(connection: conn, error: closeCode.error)
                 let _timeout = timeout ?? options.timeoutIntervalForRequest
-                try await waiter.close(timeout: _timeout) { await self.isClosed }
+                try await waiter.close(timeout: _timeout)
             } catch {
                 doClose()
                 throw error
