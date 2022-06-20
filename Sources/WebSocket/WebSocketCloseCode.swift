@@ -4,7 +4,7 @@ import Network
 /// A code indicating why a WebSocket connection closed.
 ///
 /// Mirrors [URLSessionWebSocketTask](https://developer.apple.com/documentation/foundation/urlsessionwebsockettask/closecode).
-public enum WebSocketCloseCode: Int, CaseIterable {
+public enum WebSocketCloseCode: Int, CaseIterable, Sendable {
     /// A code that indicates the connection is still open.
     case invalid = 0
 

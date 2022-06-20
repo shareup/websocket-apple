@@ -1,14 +1,15 @@
-import Foundation
+@preconcurrency import Foundation
 import Network
 
 public enum WebSocketError: Error, Equatable {
+    case closed
+    case connectionError(NWError)
     case invalidURL(URL)
     case invalidURLComponents(URLComponents)
     case openAfterConnectionClosed
-    case sendMessageWhileConnecting
     case receiveMessageWhenNotOpen
     case receiveUnknownMessageType
-    case connectionError(NWError)
+    case sendMessageWhileConnecting
 }
 
 extension Optional where Wrapped == WebSocketError {

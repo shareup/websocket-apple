@@ -1,4 +1,5 @@
 import Combine
+import Synchronized
 @testable import WebSocket
 import XCTest
 
@@ -99,7 +100,7 @@ class SystemWebSocketTests: XCTestCase {
     }
 
     func testWebSocketCannotBeOpenedTwice() async throws {
-        var closeCount = 0
+        let closeCount = Locked(0)
 
         let firstCloseEx = expectation(description: "Should have closed once")
         let secondCloseEx = expectation(description: "Should not have closed more than once")
@@ -107,8 +108,11 @@ class SystemWebSocketTests: XCTestCase {
 
         let (server, client) = await makeServerAndClient(
             onClose: { _ in
-                closeCount += 1
-                if closeCount == 1 {
+                let c = closeCount.access { count -> Int in
+                    count += 1
+                    return count
+                }
+                if c == 1 {
                     firstCloseEx.fulfill()
                 } else {
                     secondCloseEx.fulfill()
@@ -378,8 +382,8 @@ private extension SystemWebSocketTests {
     func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
 
     func makeServerAndClient(
-        onOpen: @escaping () -> Void = {},
-        onClose: @escaping (WebSocketCloseResult) -> Void = { _ in }
+        onOpen: @escaping @Sendable () -> Void = {},
+        onClose: @escaping @Sendable (WebSocketCloseResult) -> Void = { _ in }
     ) async -> (WebSocketServer, SystemWebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: port, outputPublisher: subject)
@@ -392,8 +396,8 @@ private extension SystemWebSocketTests {
     }
 
     func makeOfflineServerAndClient(
-        onOpen: @escaping () -> Void = {},
-        onClose: @escaping (WebSocketCloseResult) -> Void = { _ in }
+        onOpen: @escaping @Sendable () -> Void = {},
+        onClose: @escaping @Sendable (WebSocketCloseResult) -> Void = { _ in }
     ) async -> (WebSocketServer, SystemWebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: 1, outputPublisher: empty)
@@ -406,8 +410,8 @@ private extension SystemWebSocketTests {
     }
 
     func makeServerAndWrappedClient(
-        onOpen: @escaping () -> Void = {},
-        onClose: @escaping (WebSocketCloseResult) -> Void = { _ in }
+        onOpen: @escaping @Sendable () -> Void = {},
+        onClose: @escaping @Sendable (WebSocketCloseResult) -> Void = { _ in }
     ) async -> (WebSocketServer, WebSocket) {
         let port = ports.removeFirst()
         let server = try! WebSocketServer(port: port, outputPublisher: subject)

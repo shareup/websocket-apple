@@ -1,6 +1,6 @@
-import Combine
-import Foundation
-import Network
+@preconcurrency import Combine
+@preconcurrency import Foundation
+@preconcurrency import Network
 import os.log
 
 final actor SystemWebSocket: Publisher {
@@ -26,7 +26,8 @@ final actor SystemWebSocket: Publisher {
 
     private var messageIndex = 0 // Used to identify sent messages
 
-    private let subject = PassthroughSubject<Output, Failure>()
+    private let waiter = WebSocketWaiter()
+    private nonisolated let subject = PassthroughSubject<Output, Failure>()
 
     private let webSocketQueue: DispatchQueue = .init(
         label: "app.shareup.websocket.websocketqueue",
@@ -58,6 +59,8 @@ final actor SystemWebSocket: Publisher {
     }
 
     deinit {
+        waiter.cancelAll()
+
         switch state {
         case let .connecting(connection), let .open(connection):
             subject.send(completion: .finished)
@@ -85,39 +88,8 @@ final actor SystemWebSocket: Publisher {
 
         case .unopened, .connecting:
             do {
-                // I tried to use `withCheckedThrowingContinuation()` instead
-                // of the `while !isOpen { Task.sleep() }` hack here, but
-                // `testWebSocketCannotBeOpenedTwice()` deadlocked after calling
-                // the second `try await client.open()`. The program never
-                // progressed past the second call to
-                // `withCheckedThrowingContinuation()` regardless of what I changed.
-                // This issue seemed similar to this reported issue, which
-                // talks about issues with actors and storing continuations:
-                //
-                // https://github.com/apple/swift/issues/57188
-                //
-                // Given that, I decided to keep this version.
-                try await withThrowingTaskGroup(
-                    of: Void
-                        .self
-                ) { (group: inout ThrowingTaskGroup<Void, Error>) in
-                    _ = group.addTaskUnlessCancelled { [weak self] in
-                        guard let self = self else { return }
-                        let _timeout = UInt64(timeout ?? self.options.timeoutIntervalForRequest)
-                        try await Task.sleep(nanoseconds: _timeout * NSEC_PER_SEC)
-                        throw CancellationError()
-                    }
-
-                    _ = group.addTaskUnlessCancelled { [weak self] in
-                        guard let self = self else { return }
-                        while await !self.isOpen {
-                            try await Task.sleep(nanoseconds: 10 * NSEC_PER_MSEC)
-                        }
-                    }
-
-                    _ = try await group.next()
-                    group.cancelAll()
-                }
+                let _timeout = timeout ?? options.timeoutIntervalForRequest
+                try await waiter.open(timeout: _timeout) { await self.isOpen }
             } catch {
                 doClose()
                 throw error
@@ -208,30 +180,10 @@ final actor SystemWebSocket: Publisher {
                 )
             }
 
-            startClosing(connection: conn, error: closeCode.error)
-
             do {
-                try await withThrowingTaskGroup(
-                    of: Void
-                        .self
-                ) { (group: inout ThrowingTaskGroup<Void, Error>) in
-                    _ = group.addTaskUnlessCancelled { [weak self] in
-                        guard let self = self else { return }
-                        let _timeout = UInt64(timeout ?? self.options.timeoutIntervalForRequest)
-                        try await Task.sleep(nanoseconds: _timeout * NSEC_PER_SEC)
-                        throw CancellationError()
-                    }
-
-                    _ = group.addTaskUnlessCancelled { [weak self] in
-                        guard let self = self else { return }
-                        while await !self.isClosed {
-                            try await Task.sleep(nanoseconds: 10 * NSEC_PER_MSEC)
-                        }
-                    }
-
-                    _ = try await group.next()
-                    group.cancelAll()
-                }
+                startClosing(connection: conn, error: closeCode.error)
+                let _timeout = timeout ?? options.timeoutIntervalForRequest
+                try await waiter.addClose(timeout: _timeout) { await self.isClosed }
             } catch {
                 doClose()
                 throw error
@@ -274,7 +226,7 @@ private extension SystemWebSocket {
             throw WebSocketError.invalidURL(url)
         }
 
-        let parameters = try self.parameters(with: components)
+        let parameters = try parameters(with: components)
         let connection = NWConnection(to: .url(url), using: parameters)
         state = .connecting(connection)
         connection.stateUpdateHandler = connectionStateUpdateHandler
@@ -290,6 +242,7 @@ private extension SystemWebSocket {
         )
 
         state = .open(connection)
+        waiter.didOpen()
         onOpen()
         connection.receiveMessage(completion: onReceiveMessage)
     }
@@ -312,26 +265,31 @@ private extension SystemWebSocket {
         switch state {
         case .closing(nil):
             state = .closed(nil)
+            waiter.didClose(error: nil)
             subject.send(completion: .finished)
             onClose(normalClosure)
 
         case let .closing(.some(err)):
             state = .closed(.connectionError(err))
+            waiter.didClose(error: .connectionError(err))
             subject.send(completion: .finished)
             onClose(closureWithError(err))
 
         case .unopened:
             state = .closed(nil)
+            waiter.didClose(error: nil)
             subject.send(completion: .finished)
             onClose(abnormalClosure)
 
         case let .connecting(conn), let .open(conn):
             state = .closed(nil)
+            waiter.didClose(error: nil)
             subject.send(completion: .finished)
             onClose(abnormalClosure)
             conn.forceCancel()
 
         case .closed:
+            waiter.didClose(error: nil)
             // `PassthroughSubject` only sends completions once.
             subject.send(completion: .finished)
         }
@@ -350,26 +308,31 @@ private extension SystemWebSocket {
         switch state {
         case let .closing(.some(err)):
             state = .closed(.connectionError(err))
+            waiter.didClose(error: .connectionError(err))
             subject.send(completion: .finished)
             onClose(closureWithError(err))
 
         case .closing(nil):
             state = .closed(error)
+            waiter.didClose(error: error)
             subject.send(completion: .finished)
             onClose(closureWithError(error))
 
         case .unopened:
             state = .closed(error)
+            waiter.didClose(error: error)
             subject.send(completion: .finished)
             onClose(closureWithError(error))
 
         case let .connecting(conn), let .open(conn):
-            state = .closed(nil)
+            state = .closed(error)
+            waiter.didClose(error: error)
             subject.send(completion: .finished)
             onClose(closureWithError(error))
             conn.forceCancel()
 
         case .closed:
+            waiter.didClose(error: error)
             // `PassthroughSubject` only sends completions once.
             subject.send(completion: .finished)
         }

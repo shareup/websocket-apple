@@ -1,10 +1,11 @@
 import Combine
-import Foundation
+@preconcurrency import Foundation
 
-public typealias WebSocketOnOpen = () -> Void
-public typealias WebSocketOnClose = (WebSocketCloseResult) -> Void
+public typealias WebSocketOnOpen = @Sendable () -> Void
+public typealias WebSocketOnClose = @Sendable (WebSocketCloseResult)
+    -> Void
 
-public struct WebSocket: Identifiable {
+public struct WebSocket: Identifiable, Sendable {
     public var id: Int
 
     /// Sets a closure to be called when the WebSocket connects successfully.
@@ -16,26 +17,28 @@ public struct WebSocket: Identifiable {
     /// Opens the WebSocket connect with an optional timeout. After this function
     /// is awaited, the WebSocket connection is open ready to be used. If the
     /// connection fails or times out, an error is thrown.
-    public var open: (TimeInterval?) async throws -> Void
+    public var open: @Sendable (TimeInterval?) async throws -> Void
 
     /// Sends a close frame to the server with the given close code.
-    public var close: (WebSocketCloseCode, TimeInterval?) async throws -> Void
+    public var close: @Sendable (WebSocketCloseCode, TimeInterval?) async throws -> Void
 
     /// Sends a text or binary message.
-    public var send: (WebSocketMessage) async throws -> Void
+    public var send: @Sendable (WebSocketMessage) async throws -> Void
 
     /// Publishes messages received from WebSocket. Finishes when the
     /// WebSocket connection closes.
-    public var messagesPublisher: () -> AnyPublisher<WebSocketMessage, Never>
+    public var messagesPublisher: @Sendable ()
+        -> AnyPublisher<WebSocketMessage, Never>
 
     public init(
         id: Int,
         onOpen: @escaping WebSocketOnOpen = {},
         onClose: @escaping WebSocketOnClose = { _ in },
-        open: @escaping (TimeInterval?) async throws -> Void = { _ in },
-        close: @escaping (WebSocketCloseCode, TimeInterval?) async throws -> Void = { _, _ in },
-        send: @escaping (WebSocketMessage) async throws -> Void = { _ in },
-        messagesPublisher: @escaping () -> AnyPublisher<WebSocketMessage, Never> = {
+        open: @escaping @Sendable (TimeInterval?) async throws -> Void = { _ in },
+        close: @escaping @Sendable (WebSocketCloseCode, TimeInterval?) async throws
+            -> Void = { _, _ in },
+        send: @escaping @Sendable (WebSocketMessage) async throws -> Void = { _ in },
+        messagesPublisher: @escaping @Sendable () -> AnyPublisher<WebSocketMessage, Never> = {
             Empty<WebSocketMessage, Never>(completeImmediately: false).eraseToAnyPublisher()
         }
     ) {

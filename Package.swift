@@ -1,4 +1,4 @@
-// swift-tools-version:5.5
+// swift-tools-version:5.6
 import PackageDescription
 
 let package = Package(
@@ -12,11 +12,23 @@ let package = Package(
             targets: ["WebSocket"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(
+            url: "https://github.com/shareup/dispatch-timer.git",
+            from: "2.1.2"
+        ),
+    ],
     targets: [
         .target(
             name: "WebSocket",
-            dependencies: []
+            dependencies: [
+                .product(name: "DispatchTimer", package: "dispatch-timer"),
+            ],
+            swiftSettings: [
+                .unsafeFlags([
+                    "-Xfrontend", "-warn-concurrency",
+                ]),
+            ]
         ),
         .testTarget(
             name: "WebSocketTests",

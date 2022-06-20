@@ -1,8 +1,10 @@
-import Foundation
+@preconcurrency import Foundation
 import Network
 
 /// An enumeration of the types of messages that can be sent or received.
-public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConvertible, Hashable {
+public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConvertible, Hashable,
+    Sendable
+{
     /// A WebSocket message that contains a block of data.
     case data(Data)
 
