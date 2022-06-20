@@ -23,11 +23,6 @@ let package = Package(
             name: "WebSocket",
             dependencies: [
                 .product(name: "DispatchTimer", package: "dispatch-timer"),
-            ],
-            swiftSettings: [
-                .unsafeFlags([
-                    "-Xfrontend", "-warn-concurrency",
-                ]),
             ]
         ),
         .testTarget(
