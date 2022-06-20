@@ -14,7 +14,7 @@ final class WebSocketWaiter: Sendable {
         try await add(\Resumptions.opens, timeout: timeout, doubleCheck: isOpen)
     }
 
-    func addClose(
+    func close(
         timeout: TimeInterval,
         isClosed: @escaping @Sendable () async -> Bool
     ) async throws {

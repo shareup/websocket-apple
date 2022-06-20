@@ -183,7 +183,7 @@ final actor SystemWebSocket: Publisher {
             do {
                 startClosing(connection: conn, error: closeCode.error)
                 let _timeout = timeout ?? options.timeoutIntervalForRequest
-                try await waiter.addClose(timeout: _timeout) { await self.isClosed }
+                try await waiter.close(timeout: _timeout) { await self.isClosed }
             } catch {
                 doClose()
                 throw error
