@@ -8,8 +8,8 @@ enum WebSocketServerError: Error {
 }
 
 enum WebSocketServerOutput: Hashable {
-    case die
     case message(WebSocketMessage)
+    case remoteClose
 }
 
 private typealias E = WebSocketServerError
@@ -204,11 +204,11 @@ private extension WebSocketServer {
                             receiveValue: { [weak self] (output: WebSocketServerOutput) in
                                 guard let self = self else { return }
                                 switch output {
-                                case .die:
-                                    self.cancelConnection(newConnection)
-
                                 case let .message(message):
                                     self.broadcastMessage(message)
+
+                                case .remoteClose:
+                                    self.cancelConnection(newConnection)
                                 }
                             }
                         )

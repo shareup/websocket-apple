@@ -2,7 +2,7 @@ import Combine
 @preconcurrency import Foundation
 
 public typealias WebSocketOnOpen = @Sendable () -> Void
-public typealias WebSocketOnClose = @Sendable (WebSocketCloseResult)
+public typealias WebSocketOnClose = @Sendable (WebSocketClose)
     -> Void
 
 public struct WebSocket: Identifiable, Sendable {

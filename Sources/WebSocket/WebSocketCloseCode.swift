@@ -46,6 +46,24 @@ public enum WebSocketCloseCode: Int, CaseIterable, Sendable {
 }
 
 extension WebSocketCloseCode {
+    var nwCloseCode: NWProtocolWebSocket.CloseCode {
+        switch self {
+        case .invalid: return .privateCode(0)
+        case .normalClosure: return .protocolCode(.normalClosure)
+        case .goingAway: return .protocolCode(.goingAway)
+        case .protocolError: return .protocolCode(.protocolError)
+        case .unsupportedData: return .protocolCode(.unsupportedData)
+        case .noStatusReceived: return .protocolCode(.noStatusReceived)
+        case .abnormalClosure: return .protocolCode(.abnormalClosure)
+        case .invalidFramePayloadData: return .protocolCode(.invalidFramePayloadData)
+        case .policyViolation: return .protocolCode(.policyViolation)
+        case .messageTooBig: return .protocolCode(.messageTooBig)
+        case .mandatoryExtensionMissing: return .protocolCode(.mandatoryExtension)
+        case .internalServerError: return .protocolCode(.internalServerError)
+        case .tlsHandshakeFailure: return .protocolCode(.tlsHandshake)
+        }
+    }
+
     var error: NWError? {
         switch self {
         case .invalid:

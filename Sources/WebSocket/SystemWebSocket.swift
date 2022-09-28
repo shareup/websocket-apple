@@ -89,9 +89,14 @@ final actor SystemWebSocket: Publisher {
         case .unopened, .connecting:
             do {
                 let _timeout = timeout ?? options.timeoutIntervalForRequest
-                try await waiter.open(timeout: _timeout) 
+                try await waiter.open(timeout: _timeout)
+            } catch is CancellationError {
+                Swift.print("$$$ open(timeout:) CancellationError \(state)")
+                doClose(.noStatusReceived)
+                throw CancellationError()
             } catch {
-                doClose()
+                Swift.print("$$$ open(timeout:) \(error) \(state)")
+//                doClose(.abnormalClosure, error)
                 throw error
             }
         }
@@ -181,16 +186,22 @@ final actor SystemWebSocket: Publisher {
             }
 
             do {
-                startClosing(connection: conn, error: closeCode.error)
+                startClosing(
+                    connection: conn,
+                    closeCode: closeCode,
+                    error: closeCode.error
+                )
                 let _timeout = timeout ?? options.timeoutIntervalForRequest
                 try await waiter.close(timeout: _timeout)
             } catch {
-                doClose()
+                Swift.print("$$$ close(_:timeout:) connecting or open")
+                doClose(closeCode)
                 throw error
             }
 
         case .unopened, .closing, .closed:
-            doClose()
+            Swift.print("$$$ close(_:timeout:)")
+            doClose(closeCode)
         }
     }
 
@@ -203,7 +214,8 @@ final actor SystemWebSocket: Publisher {
             state.description
         )
 
-        doClose()
+        Swift.print("$$$ forceClose(_:)")
+        doClose(closeCode)
     }
 }
 
@@ -247,55 +259,20 @@ private extension SystemWebSocket {
         connection.receiveMessage(completion: onReceiveMessage)
     }
 
-    func startClosing(connection: NWConnection, error: NWError? = nil) {
-        state = .closing(error)
+    func startClosing(
+        connection: NWConnection,
+        closeCode: WebSocketCloseCode,
+        error: NWError? = nil
+    ) {
+        state = .closing(closeCode, error)
         subject.send(completion: .finished)
-        connection.cancel()
+        connection.cancelIfNeeded()
     }
 
-    func doClose() {
-        // TODO: Switch to using `state.description`
-        os_log(
-            "do close connection: state=%{public}s",
-            log: .webSocket,
-            type: .debug,
-            state.debugDescription
-        )
-
-        switch state {
-        case .closing(nil):
-            state = .closed(nil)
-            waiter.didClose(error: nil)
-            subject.send(completion: .finished)
-            onClose(normalClosure)
-
-        case let .closing(.some(err)):
-            state = .closed(.connectionError(err))
-            waiter.didClose(error: .connectionError(err))
-            subject.send(completion: .finished)
-            onClose(closureWithError(err))
-
-        case .unopened:
-            state = .closed(nil)
-            waiter.didClose(error: nil)
-            subject.send(completion: .finished)
-            onClose(abnormalClosure)
-
-        case let .connecting(conn), let .open(conn):
-            state = .closed(nil)
-            waiter.didClose(error: nil)
-            subject.send(completion: .finished)
-            onClose(abnormalClosure)
-            conn.forceCancel()
-
-        case .closed:
-            waiter.didClose(error: nil)
-            // `PassthroughSubject` only sends completions once.
-            subject.send(completion: .finished)
-        }
-    }
-
-    func doCloseWithError(_ error: WebSocketError) {
+    func doClose(
+        _ closeCode: WebSocketCloseCode,
+        _ error: Error? = nil
+    ) {
         // TODO: Switch to using `state.description`
         os_log(
             "do close connection: state=%{public}s error=%{public}s",
@@ -305,34 +282,50 @@ private extension SystemWebSocket {
             String(describing: error)
         )
 
-        switch state {
-        case let .closing(.some(err)):
-            state = .closed(.connectionError(err))
-            waiter.didClose(error: .connectionError(err))
-            subject.send(completion: .finished)
-            onClose(closureWithError(err))
+        let wsError = { (error: Error?) -> WebSocketError? in
+            guard let error = error else { return nil }
 
-        case .closing(nil):
-            state = .closed(error)
-            waiter.didClose(error: error)
+            if let wsError = error as? WebSocketError {
+                return wsError
+            } else if let nwError = error as? NWError {
+                return .connectionError(nwError)
+            } else {
+                return .unknown(error as NSError)
+            }
+        }
+
+        switch state {
+        case let .closing(closeCode, .some(err)):
+            let _error = wsError(err)
+            state = .closed(_error)
+            waiter.didClose(error: _error)
             subject.send(completion: .finished)
-            onClose(closureWithError(error))
+            onClose((closeCode, _error))
+
+        case let .closing(closeCode, nil):
+            let _error = wsError(error)
+            state = .closed(_error)
+            waiter.didClose(error: _error)
+            subject.send(completion: .finished)
+            onClose((closeCode, _error))
 
         case .unopened:
-            state = .closed(error)
-            waiter.didClose(error: error)
+            let _error = wsError(error)
+            state = .closed(_error)
+            waiter.didClose(error: _error)
             subject.send(completion: .finished)
-            onClose(closureWithError(error))
+            onClose((closeCode, _error))
 
         case let .connecting(conn), let .open(conn):
-            state = .closed(error)
-            waiter.didClose(error: error)
+            let _error = wsError(error)
+            state = .closed(_error)
+            waiter.didClose(error: _error)
             subject.send(completion: .finished)
-            onClose(closureWithError(error))
+            onClose((closeCode, _error))
             conn.forceCancel()
 
         case .closed:
-            waiter.didClose(error: error)
+            waiter.didClose(error: wsError(error))
             // `PassthroughSubject` only sends completions once.
             subject.send(completion: .finished)
         }
@@ -402,7 +395,14 @@ private extension SystemWebSocket {
                     break
 
                 case let .waiting(error):
-                    await self.doCloseWithError(.connectionError(error))
+                    Swift.print("$$$ connectionStateUpdateHandler .waiting(\(error))")
+                    if let conn = await self.state.connection {
+                        await self.startClosing(
+                            connection: conn,
+                            closeCode: .abnormalClosure,
+                            error: error
+                        )
+                    }
 
                 case .preparing:
                     break
@@ -413,6 +413,7 @@ private extension SystemWebSocket {
                         await self.openReadyConnection(conn)
 
                     case .open:
+                        Swift.print("$$$ READY-OPEN")
                         // TODO: Handle betterPathUpdate here?
                         break
 
@@ -429,7 +430,11 @@ private extension SystemWebSocket {
                 case let .failed(error):
                     switch state {
                     case let .connecting(conn), let .open(conn):
-                        await self.startClosing(connection: conn, error: error)
+                        await self.startClosing(
+                            connection: conn,
+                            closeCode: .abnormalClosure,
+                            error: error
+                        )
 
                     case .unopened, .closing, .closed:
                         break
@@ -438,10 +443,11 @@ private extension SystemWebSocket {
                 case .cancelled:
                     switch state {
                     case let .connecting(conn), let .open(conn):
-                        await self.startClosing(connection: conn)
+                        await self.startClosing(connection: conn, closeCode: .normalClosure)
 
                     case .unopened, .closing:
-                        await self.doClose()
+                        Swift.print("$$$ connectionStateUpdateHandler .cancelled")
+                        await self.doClose(.normalClosure)
 
                     case .closed:
                         break
@@ -465,6 +471,9 @@ private extension SystemWebSocket {
                     await self.handleSuccessfulMessage(data: data, context: context)
                 case let (.none, _, .some(error)):
                     await self.handleMessageWithError(error)
+                case let (_, .some(context), _) where context.isFinal:
+                    os_log("receive close", log: .webSocket, type: .debug)
+                    await self.doClose(.normalClosure)
                 default:
                     await self.handleUnknownMessage(data: data, context: context, error: error)
                 }
@@ -487,7 +496,11 @@ private extension SystemWebSocket {
 
         case .text:
             guard let text = String(data: data, encoding: .utf8) else {
-                startClosing(connection: connection, error: .posix(.EBADMSG))
+                startClosing(
+                    connection: connection,
+                    closeCode: .invalidFramePayloadData,
+                    error: .posix(.EBADMSG)
+                )
                 return
             }
             os_log(
@@ -499,7 +512,8 @@ private extension SystemWebSocket {
             subject.send(.text(text))
 
         case .close:
-            doClose()
+            Swift.print("$$$ handleSuccessfulMessage .close")
+            doClose(.normalClosure)
 
         case .pong:
             // TODO: Handle pongs at some point
@@ -516,7 +530,7 @@ private extension SystemWebSocket {
     func handleMessageWithError(_ error: NWError) {
         switch state {
         case let .connecting(conn), let .open(conn):
-            startClosing(connection: conn, error: error)
+            startClosing(connection: conn, closeCode: error.closeCode, error: error)
 
         case .unopened, .closing, .closed:
             // TODO: Should we call `doClose()` here, instead?
@@ -543,7 +557,12 @@ private extension SystemWebSocket {
             describeInputs()
         )
 
-        doCloseWithError(WebSocketError.receiveUnknownMessageType)
+        if let conn = state.connection {
+            startClosing(connection: conn, closeCode: .unsupportedData, error: error)
+        } else {
+            let _error: WebSocketError? = error != nil ? .connectionError(error!) : nil
+            doClose(.unsupportedData, _error)
+        }
     }
 }
 
@@ -567,8 +586,15 @@ private enum WebSocketState: CustomStringConvertible, CustomDebugStringConvertib
     case unopened
     case connecting(NWConnection)
     case open(NWConnection)
-    case closing(NWError?)
+    case closing(WebSocketCloseCode, NWError?)
     case closed(WebSocketError?)
+
+    var connection: NWConnection? {
+        switch self {
+        case let .connecting(conn), let .open(conn): return conn
+        case .unopened, .closing, .closed: return nil
+        }
+    }
 
     var description: String {
         switch self {
@@ -582,11 +608,16 @@ private enum WebSocketState: CustomStringConvertible, CustomDebugStringConvertib
 
     var debugDescription: String {
         switch self {
-        case .unopened: return "unopened"
-        case let .connecting(conn): return "connecting(\(String(reflecting: conn)))"
-        case let .open(conn): return "open(\(String(reflecting: conn)))"
-        case let .closing(error): return "closing(\(error.debugDescription))"
-        case let .closed(error): return "closed(\(error.debugDescription))"
+        case .unopened:
+            return "unopened"
+        case let .connecting(conn):
+            return "connecting(\(String(reflecting: conn)))"
+        case let .open(conn):
+            return "open(\(String(reflecting: conn)))"
+        case let .closing(code, error):
+            return "closing(\(code), \(error.debugDescription))"
+        case let .closed(error):
+            return "closed(\(error.debugDescription))"
         }
     }
 }
@@ -619,7 +650,7 @@ private extension NWError {
             return .normalClosure
         default:
             print("Unhandled error in '\(#function)': \(debugDescription)")
-            return .normalClosure
+            return .abnormalClosure
         }
     }
 }

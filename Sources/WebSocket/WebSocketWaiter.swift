@@ -58,6 +58,7 @@ final class WebSocketWaiter: Sendable {
     }
 
     func close(timeout: TimeInterval) async throws {
+        Swift.print("$$$ \(#function)")
         let id = UUID().uuidString
         try await withTaskCancellationHandler(
             operation: {
@@ -123,9 +124,9 @@ final class WebSocketWaiter: Sendable {
             return (opens, closes)
         }
 
-        opens.forEach { open in
-            open.timer.invalidate()
-            open.continuation.resume(throwing: error ?? WebSocketError.closed)
+        opens.forEach { `open` in
+            `open`.timer.invalidate()
+            `open`.continuation.resume(throwing: error ?? WebSocketError.closed)
         }
         closes.forEach { close in
             close.timer.invalidate()

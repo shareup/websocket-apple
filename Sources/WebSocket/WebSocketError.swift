@@ -10,6 +10,7 @@ public enum WebSocketError: Error, Equatable {
     case receiveMessageWhenNotOpen
     case receiveUnknownMessageType
     case sendMessageWhileConnecting
+    case unknown(NSError)
 }
 
 extension Optional where Wrapped == WebSocketError {

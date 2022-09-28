@@ -1,15 +1,17 @@
 name: Test
 
-on: 
+on:
   push:
 
 jobs:
   test:
     name: Test
-    runs-on: macos-latest
-    
+    runs-on: macos-12
+
     steps:
       - uses: actions/checkout@v2
+      - name: Xcode Select
+        run: sudo xcode-select -s /Applications/Xcode_13.4.1.app
       - name: Build
         run: swift build -v
       - name: Test
