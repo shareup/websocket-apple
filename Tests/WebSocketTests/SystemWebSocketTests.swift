@@ -27,12 +27,13 @@ class SystemWebSocketTests: XCTestCase {
             onOpen: { openEx.fulfill() },
             onClose: { close in
                 XCTAssertEqual(.normalClosure, close.code)
-                XCTAssertNil(close.error)
+                XCTAssertNil(close.reason)
                 closeEx.fulfill()
             }
         )
         defer { server.forceClose() }
 
+        try await client.open(timeout: 2)
         wait(for: [openEx], timeout: 2)
 
         let isOpen = await client.isOpen
@@ -47,19 +48,8 @@ class SystemWebSocketTests: XCTestCase {
         let (server, client) = await makeOfflineServerAndClient(
             onOpen: { XCTFail("Should not have opened") },
             onClose: { close in
-                guard let wsError = close.error,
-                      case let .connectionError(nwerror) = wsError,
-                      case let .posix(posix) = nwerror
-                else {
-                    let error = String(describing: close.error)
-                    return XCTFail("Closed with incorrect error: \(error)")
-                }
-
                 XCTAssertEqual(.abnormalClosure, close.code)
-                XCTAssertTrue(
-                    posix == .ECONNREFUSED ||
-                    posix == .ECONNABORTED
-                )
+                XCTAssertNil(close.reason)
                 ex.fulfill()
             }
         )
@@ -75,32 +65,18 @@ class SystemWebSocketTests: XCTestCase {
         let errorEx = expectation(description: "Should have closed")
         let (server, client) = await makeServerAndClient(
             onClose: { close in
-                defer { errorEx.fulfill() }
                 XCTAssertTrue(
-                    close.code == .normalClosure ||
-                    close.code == .abnormalClosure
+                    .abnormalClosure == close.code || .cancelled == close.code
                 )
-                XCTAssertTrue(
-                    close.error == nil ||
-                    close.error == .connectionError(.posix(.ECONNABORTED)) ||
-                    close.error == .connectionError(.posix(.ECONNREFUSED))
-                )
+                errorEx.fulfill()
             }
         )
         defer { server.forceClose() }
 
+        // When running tests repeatedly (i.e., on the order of 1000s of times),
+        // sometimes the server fails and causes `.open()` to throw.
         do { try await client.open() }
-        catch is CancellationError {}
-        catch {
-            Swift.print("$$$ ERROR \(error)")
-//            guard let wsError = error as? WebSocketError
-//            else { return XCTFail() }
-//
-//            XCTAssertTrue(
-//                wsError == .connectionError(.posix(.ECONNABORTED)) ||
-//                wsError == .connectionError(.posix(.ECONNREFUSED))
-//            )
-        }
+        catch {}
 
         subject.send(.remoteClose)
         wait(for: [errorEx], timeout: 2)
@@ -138,7 +114,7 @@ class SystemWebSocketTests: XCTestCase {
             XCTFail("Should not have successfully reopened")
         } catch {
             guard let wserror = error as? WebSocketError,
-                  case .openAfterConnectionClosed = wserror
+                  case .alreadyClosed = wserror.closeCode
             else { return XCTFail("Received wrong error: \(error)") }
         }
 
@@ -314,28 +290,30 @@ class SystemWebSocketTests: XCTestCase {
             onOpen: { openEx.fulfill() },
             onClose: { close in
                 XCTAssertEqual(.normalClosure, close.code)
-                XCTAssertNil(close.error)
+                XCTAssertNil(close.reason)
                 closeEx.fulfill()
             }
         )
         defer { server.forceClose() }
 
-        var messagesToSend: [WebSocketMessage] = [
-            .text("one"),
-            .data(Data("two".utf8)),
-            .text("three"),
+        let messagesToSendToServer: [WebSocketMessage] = [
+            .text("client: one"),
+            .data(Data("client: two".utf8)),
+            .text("client: three"),
         ]
 
-        var messagesToReceive: [WebSocketMessage] = [
-            .text("one"),
-            .data(Data("two".utf8)),
-            .text("three"),
+        let messagesToReceiveFromServer: [WebSocketMessage] = [
+            .text("server: one"),
+            .data(Data("server: two".utf8)),
+            .text("server: three"),
         ]
 
+        var messagesReceivedByServer = 0
         let sentSub = server.inputPublisher
             .sink(receiveValue: { message in
-                let expected = messagesToSend.removeFirst()
-                XCTAssertEqual(expected, message)
+                let i = messagesReceivedByServer
+                defer { messagesReceivedByServer += 1 }
+                XCTAssertEqual(messagesToSendToServer[i], message)
             })
         defer { sentSub.cancel() }
 
@@ -344,31 +322,30 @@ class SystemWebSocketTests: XCTestCase {
         try await client.open()
         wait(for: [openEx], timeout: 2)
 
-        // These messages have to be sent after the `AsyncStream` is
-        // subscribed to below. So, we send them asynchronously.
-        let firstMessageToReceive = try XCTUnwrap(messagesToReceive.first)
-        let firstMessageToSend = try XCTUnwrap(messagesToSend.first)
+        // This message has to be sent after the `AsyncStream` is
+        // subscribed to below.
+        let messageToReceiveFromServer = messagesToReceiveFromServer[0]
         Task.detached {
-            await self.subject.send(.message(firstMessageToReceive))
-            try await client.send(firstMessageToSend)
+            await self.subject.send(.message(messageToReceiveFromServer))
         }
 
+        var messagesReceivedByClient = 0
         for await message in client.messages {
-            let expected = messagesToReceive.removeFirst()
-            XCTAssertEqual(expected, message)
+            let i = messagesReceivedByClient
+            defer { messagesReceivedByClient += 1 }
 
-            if let messageToSend = messagesToSend.first,
-               let messageToReceive = messagesToReceive.first
-            {
-                try await client.send(messageToSend)
-                subject.send(.message(messageToReceive))
+            XCTAssertEqual(messagesToReceiveFromServer[i], message)
+            try await client.send(messagesToSendToServer[i])
+
+            if i < 2 {
+                subject.send(.message(messagesToReceiveFromServer[i + 1]))
             } else {
                 try await client.close()
             }
         }
 
-        XCTAssertTrue(messagesToSend.isEmpty)
-        XCTAssertTrue(messagesToReceive.isEmpty)
+        XCTAssertEqual(3, messagesReceivedByClient)
+        XCTAssertEqual(3, messagesReceivedByServer)
 
         wait(for: [closeEx], timeout: 2)
     }
@@ -391,6 +368,7 @@ private extension SystemWebSocketTests {
         let server = try! WebSocketServer(port: port, outputPublisher: subject)
         let client = try! await SystemWebSocket(
             url: url(port),
+            options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
         )
@@ -405,6 +383,7 @@ private extension SystemWebSocketTests {
         let server = try! WebSocketServer(port: 1, outputPublisher: empty)
         let client = try! await SystemWebSocket(
             url: url(port),
+            options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
         )
@@ -419,6 +398,7 @@ private extension SystemWebSocketTests {
         let server = try! WebSocketServer(port: port, outputPublisher: subject)
         let client = try! await SystemWebSocket(
             url: url(port),
+            options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
         )

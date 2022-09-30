@@ -34,7 +34,7 @@ final class WebSocketWaiterTests: XCTestCase {
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
-                        WebSocketError.receiveUnknownMessageType,
+                        WebSocketError(.unsupportedData, nil),
                         error as? WebSocketError
                     )
                     didFail.access { $0 = true }
@@ -102,7 +102,7 @@ final class WebSocketWaiterTests: XCTestCase {
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
-                        WebSocketError.receiveUnknownMessageType,
+                        WebSocketError(.unsupportedData, nil),
                         error as? WebSocketError
                     )
                     didCloseWithError.access { $0 = true }
@@ -151,7 +151,7 @@ final class WebSocketWaiterTests: XCTestCase {
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
-                        WebSocketError.receiveUnknownMessageType,
+                        WebSocketError(.unsupportedData, nil),
                         error as? WebSocketError
                     )
                     openFails.access { $0 = true }
@@ -164,7 +164,7 @@ final class WebSocketWaiterTests: XCTestCase {
                     XCTFail()
                 } catch {
                     XCTAssertEqual(
-                        WebSocketError.receiveUnknownMessageType,
+                        WebSocketError(.unsupportedData, nil),
                         error as? WebSocketError
                     )
                     didCloseWithError.access { $0 = true }
@@ -196,7 +196,7 @@ final class WebSocketWaiterTests: XCTestCase {
                         XCTFail()
                     } catch {
                         XCTAssertEqual(
-                            WebSocketError.receiveUnknownMessageType,
+                            WebSocketError(.unsupportedData, nil),
                             error as? WebSocketError
                         )
                         openCount.access { $0 += 1 }
@@ -214,7 +214,7 @@ final class WebSocketWaiterTests: XCTestCase {
                         normalCloseCount.access { $0 += 1 }
                     } catch {
                         XCTAssertEqual(
-                            WebSocketError.receiveUnknownMessageType,
+                            WebSocketError(.unsupportedData, nil),
                             error as? WebSocketError
                         )
                         closeWithErrorCount.access { $0 += 1 }
@@ -250,12 +250,12 @@ private actor Socket {
     func close(after delay: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: UInt64(Double(NSEC_PER_SEC) * delay))
         isClosed = true
-        waiter.didClose(error: nil)
+        waiter.didClose(code: .normalClosure, reason: nil)
     }
 
     func closeWithError(after delay: TimeInterval) async throws {
         try await Task.sleep(nanoseconds: UInt64(Double(NSEC_PER_SEC) * delay))
         isClosed = true
-        waiter.didClose(error: .receiveUnknownMessageType)
+        waiter.didClose(code: .unsupportedData, reason: nil)
     }
 }

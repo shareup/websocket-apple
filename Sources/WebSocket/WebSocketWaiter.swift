@@ -34,10 +34,10 @@ final class WebSocketWaiter: Sendable {
                                     cont.resume()
                                 }
 
-                            case let .closed(error):
+                            case let .closed(code, reason):
                                 return {
                                     timer.invalidate()
-                                    cont.resume(throwing: error ?? WebSocketError.closed)
+                                    cont.resume(throwing: WebSocketError(code, reason))
                                 }
                             }
                         }
@@ -58,7 +58,6 @@ final class WebSocketWaiter: Sendable {
     }
 
     func close(timeout: TimeInterval) async throws {
-        Swift.print("$$$ \(#function)")
         let id = UUID().uuidString
         try await withTaskCancellationHandler(
             operation: {
@@ -71,13 +70,14 @@ final class WebSocketWaiter: Sendable {
 
                     let res = Resumption(id, cont, timer)
                     let block: (() -> Void)? = state.access { state in
-                        if case let .closed(error) = state.connection {
+                        if case let .closed(code, reason) = state.connection {
                             return {
                                 timer.invalidate()
-                                if let error = error {
-                                    cont.resume(throwing: error)
-                                } else {
+
+                                if case .normalClosure = code {
                                     cont.resume()
+                                } else {
+                                    cont.resume(throwing: WebSocketError(code, reason))
                                 }
                             }
                         } else {
@@ -113,9 +113,9 @@ final class WebSocketWaiter: Sendable {
         }
     }
 
-    func didClose(error: WebSocketError?) {
+    func didClose(code: WebSocketCloseCode?, reason: Data?) {
         let (opens, closes): ([Resumption], [Resumption]) = state.access { state in
-            state.connection = .closed(error)
+            state.connection = .closed(code: code, reason: reason)
 
             let opens = state.opens
             let closes = state.closes
@@ -126,21 +126,22 @@ final class WebSocketWaiter: Sendable {
 
         opens.forEach { `open` in
             `open`.timer.invalidate()
-            `open`.continuation.resume(throwing: error ?? WebSocketError.closed)
+            `open`.continuation.resume(throwing: WebSocketError(code, reason))
         }
         closes.forEach { close in
             close.timer.invalidate()
-            if let error = error {
-                close.continuation.resume(throwing: error)
-            } else {
+
+            if case .normalClosure = code {
                 close.continuation.resume()
+            } else {
+                close.continuation.resume(throwing: WebSocketError(code, reason))
             }
         }
     }
 
     func cancelAll() {
         let resumptions: [Resumption] = state.access { state in
-            state.connection = .closed(CancellationError())
+            state.connection = .closed(code: .cancelled, reason: nil)
 
             let opens = state.opens
             let closes = state.closes
@@ -179,7 +180,7 @@ private struct State: Sendable {
     enum Connection {
         case unopened
         case open
-        case closed(Error?)
+        case closed(code: WebSocketCloseCode?, reason: Data?)
     }
 
     var connection: Connection = .unopened

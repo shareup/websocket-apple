@@ -1,10 +1,8 @@
-@preconcurrency import Foundation
+import Foundation
 import Network
 
 /// An enumeration of the types of messages that can be sent or received.
-public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConvertible, Hashable,
-    Sendable
-{
+public enum WebSocketMessage: CustomStringConvertible, Hashable, Sendable {
     /// A WebSocket message that contains a block of data.
     case data(Data)
 
@@ -17,8 +15,6 @@ public enum WebSocketMessage: CustomStringConvertible, CustomDebugStringConverti
         case let .text(text): return text
         }
     }
-
-    public var debugDescription: String { description }
 }
 
 public extension WebSocketMessage {
@@ -29,6 +25,28 @@ public extension WebSocketMessage {
 
         case let .text(text):
             return text
+        }
+    }
+}
+
+extension WebSocketMessage {
+    init(_ message: URLSessionWebSocketTask.Message) {
+        switch message {
+        case let .data(data):
+            self = .data(data)
+
+        case let .string(text):
+            self = .text(text)
+
+        @unknown default:
+            fatalError("Unhandled message: \(message)")
+        }
+    }
+
+    var wsMessage: URLSessionWebSocketTask.Message {
+        switch self {
+        case let .data(data): return .data(data)
+        case let .text(text): return .string(text)
         }
     }
 }

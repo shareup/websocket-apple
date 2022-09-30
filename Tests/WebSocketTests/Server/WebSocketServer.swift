@@ -49,7 +49,6 @@ final class WebSocketServer {
         let parameters = NWParameters(tls: usesTLS ? .init() : nil)
         parameters.allowLocalEndpointReuse = true
         parameters.includePeerToPeer = true
-        parameters.acceptLocalOnly = true
 
         let options = NWProtocolWebSocket.Options()
         options.autoReplyPing = true

@@ -1,9 +1,9 @@
 import Combine
-@preconcurrency import Foundation
+import Foundation
+import Synchronized
 
 public typealias WebSocketOnOpen = @Sendable () -> Void
-public typealias WebSocketOnClose = @Sendable (WebSocketClose)
-    -> Void
+public typealias WebSocketOnClose = @Sendable (WebSocketClose) -> Void
 
 public struct WebSocket: Identifiable, Sendable {
     public var id: Int
@@ -22,6 +22,11 @@ public struct WebSocket: Identifiable, Sendable {
     /// Sends a close frame to the server with the given close code.
     public var close: @Sendable (WebSocketCloseCode, TimeInterval?) async throws -> Void
 
+    /// Invalidates **all** WebSocket connections. It should only be used
+    /// when all WebSocket connections in the current process need to be
+    /// cancelled.
+    public var invalidateAll: @Sendable () -> Void
+
     /// Sends a text or binary message.
     public var send: @Sendable (WebSocketMessage) async throws -> Void
 
@@ -37,6 +42,7 @@ public struct WebSocket: Identifiable, Sendable {
         open: @escaping @Sendable (TimeInterval?) async throws -> Void = { _ in },
         close: @escaping @Sendable (WebSocketCloseCode, TimeInterval?) async throws
             -> Void = { _, _ in },
+        invalidateAll: @escaping @Sendable () -> Void = { },
         send: @escaping @Sendable (WebSocketMessage) async throws -> Void = { _ in },
         messagesPublisher: @escaping @Sendable () -> AnyPublisher<WebSocketMessage, Never> = {
             Empty<WebSocketMessage, Never>(completeImmediately: false).eraseToAnyPublisher()
@@ -47,6 +53,7 @@ public struct WebSocket: Identifiable, Sendable {
         self.onClose = onClose
         self.open = open
         self.close = close
+        self.invalidateAll = invalidateAll
         self.send = send
         self.messagesPublisher = messagesPublisher
     }
@@ -70,13 +77,15 @@ public extension WebSocket {
 
     /// The WebSocket's received messages as an asynchronous stream.
     var messages: AsyncStream<WebSocketMessage> {
-        var cancellable: AnyCancellable?
+        let cancellable = Locked<AnyCancellable?>(nil)
 
         return AsyncStream { cont in
             func finish() {
-                if cancellable != nil {
-                    cont.finish()
-                    cancellable = nil
+                cancellable.access { cancellable in
+                    if cancellable != nil {
+                        cont.finish()
+                        cancellable = nil
+                    }
                 }
             }
 
@@ -87,13 +96,13 @@ public extension WebSocket {
                     receiveValue: { cont.yield($0) }
                 )
 
-            cancellable = _cancellable
+            cancellable.access { $0 = _cancellable }
         }
     }
 }
 
 public extension WebSocket {
-    /// System WebSocket implementation powered by the Network Framework.
+    /// System WebSocket implementation powered by `URLSessionWebSocketTask`.
     static func system(
         url: URL,
         options: WebSocketOptions = .init(),
@@ -116,7 +125,8 @@ public extension WebSocket {
             onOpen: ws.onOpen,
             onClose: ws.onClose,
             open: { timeout in try await ws.open(timeout: timeout) },
-            close: { code, timeout in try await ws.close(code, timeout: timeout) },
+            close: { code, timeout in try await ws.close(code: code, timeout: timeout) },
+            invalidateAll: { cancelAndInvalidateAllTasks() }, 
             send: { message in try await ws.send(message) },
             messagesPublisher: { ws.eraseToAnyPublisher() }
         )
