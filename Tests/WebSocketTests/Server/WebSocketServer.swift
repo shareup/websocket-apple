@@ -60,6 +60,7 @@ final class WebSocketServer {
         onUpgrade: @escaping (HTTPRequestHead, WS) -> Void
     ) -> ServerBootstrap {
         ServerBootstrap(group: eventLoopGroup)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { (channel: Channel) in
                 let ws = NIOWebSocketServerUpgrader(
                     shouldUpgrade: { channel, _ in
