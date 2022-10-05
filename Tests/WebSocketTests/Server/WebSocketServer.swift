@@ -1,18 +1,18 @@
 import Combine
 import Foundation
-import Network
+import NIO
+import NIOHTTP1
+import NIOSSL
+import NIOWebSocket
 import WebSocket
-
-enum WebSocketServerError: Error {
-    case couldNotCreatePort(UInt16)
-}
+import WebSocketKit
 
 enum WebSocketServerOutput: Hashable {
     case message(WebSocketMessage)
     case remoteClose
 }
 
-private typealias E = WebSocketServerError
+private typealias WS = WebSocketKit.WebSocket
 
 final class WebSocketServer {
     let port: UInt16
@@ -26,15 +26,8 @@ final class WebSocketServer {
     // Publisher the repeats everything sent to it by clients.
     private let inputSubject = PassthroughSubject<WebSocketMessage, Never>()
 
-    private var listener: NWListener
-    private var connections: [NWConnection] = []
-
-    private let queue = DispatchQueue(
-        label: "app.shareup.websocketserverqueue",
-        qos: .default,
-        autoreleaseFrequency: .workItem,
-        target: .global()
-    )
+    private let eventLoopGroup: EventLoopGroup
+    private var channel: Channel?
 
     init<P: Publisher>(
         port: UInt16,
@@ -42,185 +35,107 @@ final class WebSocketServer {
         usesTLS: Bool = false,
         maximumMessageSize: Int = 1024 * 1024
     ) throws where P.Output == WebSocketServerOutput, P.Failure == Error {
+        print("$$$ PORT: \(port)")
         self.port = port
         self.outputPublisher = outputPublisher.eraseToAnyPublisher()
         self.maximumMessageSize = maximumMessageSize
 
-        let parameters = NWParameters(tls: usesTLS ? .init() : nil)
-        parameters.allowLocalEndpointReuse = true
-        parameters.includePeerToPeer = true
+        eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-        let options = NWProtocolWebSocket.Options()
-        options.autoReplyPing = true
-        options.maximumMessageSize = maximumMessageSize
-
-        parameters.defaultProtocolStack.applicationProtocols.insert(options, at: 0)
-
-        guard let port = NWEndpoint.Port(rawValue: port)
-        else { throw E.couldNotCreatePort(port) }
-
-        listener = try NWListener(using: parameters, on: port)
-
-        start()
+        do {
+            channel = try makeWebSocket(
+                on: eventLoopGroup,
+                onUpgrade: onWebSocketUpgrade
+            )
+            .bind(host: "0.0.0.0", port: Int(port))
+            .wait()
+        } catch let error as IOError where error.errnoCode == 48 {
+            // Address already in use
+            print("$$$ \(port) is already in use")
+        }
     }
 
-    func forceClose() {
-        queue.sync {
-            connections.forEach { connection in
-                connection.forceCancel()
+    private func makeWebSocket(
+        on eventLoopGroup: EventLoopGroup,
+        onUpgrade: @escaping (HTTPRequestHead, WS) -> Void
+    ) -> ServerBootstrap {
+        ServerBootstrap(group: eventLoopGroup)
+            .childChannelInitializer { (channel: Channel) in
+                let ws = NIOWebSocketServerUpgrader(
+                    shouldUpgrade: { channel, _ in
+                        channel.eventLoop.makeSucceededFuture([:])
+                    },
+                    upgradePipelineHandler: { channel, req in
+                        WS.server(on: channel) { onUpgrade(req, $0) }
+                    }
+                )
+
+                return channel.pipeline.configureHTTPServerPipeline(
+                    withServerUpgrade: (
+                        upgraders: [ws],
+                        completionHandler: { _ in }
+                    )
+                )
             }
-            connections.removeAll()
-            listener.cancel()
+    }
+
+    private var onWebSocketUpgrade: (HTTPRequestHead, WS) -> Void {
+        { [weak self] (req: HTTPRequestHead, ws: WS) in
+            guard let self else { return }
+
+            let sub = self.outputPublisher
+                .sink(
+                    receiveCompletion: { completion in
+                        switch completion {
+                        case .finished:
+                            let _ = ws.close(code:)
+
+                        case .failure:
+                            let _ = ws.close(code: .unexpectedServerError)
+                        }
+                    },
+                    receiveValue: { output in
+                        switch output {
+                        case .remoteClose:
+                            do { try ws.close(code: .goingAway).wait() }
+                            catch {}
+
+                        case let .message(message):
+                            switch message {
+                            case let .data(data):
+                                ws.send(raw: data, opcode: .binary)
+
+                            case let .text(text):
+                                ws.send(text)
+                            }
+                        }
+                    }
+                )
+
+            self.outputPublisherSubscription = sub
+
+            ws.onText { [weak self] _, text in
+                self?.inputSubject.send(.text(text))
+            }
+
+            ws.onBinary { [weak self] _, buffer in
+                guard let self,
+                      let data = buffer.getData(
+                        at: buffer.readerIndex,
+                        length: buffer.readableBytes
+                      )
+                else { return }
+                self.inputSubject.send(.data(data))
+            }
         }
+    }
+
+    func shutDown() {
+        try? channel?.close(mode: .all).wait()
+        try? eventLoopGroup.syncShutdownGracefully()
     }
 
     var inputPublisher: AnyPublisher<WebSocketMessage, Never> {
         inputSubject.eraseToAnyPublisher()
-    }
-}
-
-private extension WebSocketServer {
-    func start() {
-        listener.newConnectionHandler = onNewConnection
-
-        listener.stateUpdateHandler = { [weak self] state in
-            guard let self = self else { return }
-            switch state {
-            case .failed:
-                self.close()
-
-            default:
-                break
-            }
-        }
-
-        listener.start(queue: queue)
-    }
-
-    func broadcastMessage(_ message: WebSocketMessage) {
-        let context: NWConnection.ContentContext
-        let content: Data
-
-        switch message {
-        case let .data(data):
-            let metadata: NWProtocolWebSocket.Metadata = .init(opcode: .binary)
-            context = .init(identifier: String(message.hashValue), metadata: [metadata])
-            content = data
-
-        case let .text(string):
-            let metadata: NWProtocolWebSocket.Metadata = .init(opcode: .text)
-            context = .init(identifier: String(message.hashValue), metadata: [metadata])
-            content = Data(string.utf8)
-        }
-
-        connections.forEach { connection in
-            connection.send(
-                content: content,
-                contentContext: context,
-                isComplete: true,
-                completion: .contentProcessed { [weak self] error in
-                    guard let _ = error else { return }
-                    self?.closeConnection(connection)
-                }
-            )
-        }
-    }
-
-    func close() {
-        connections.forEach { closeConnection($0) }
-        connections.removeAll()
-        listener.cancel()
-    }
-
-    func closeConnection(_ connection: NWConnection) {
-        connection.send(
-            content: nil,
-            contentContext: .finalMessage,
-            isComplete: true,
-            completion: .contentProcessed { _ in
-                connection.cancel()
-            }
-        )
-    }
-
-    func cancelConnection(_ connection: NWConnection) {
-        connection.forceCancel()
-        connections.removeAll(where: { $0 === connection })
-    }
-
-    var onNewConnection: (NWConnection) -> Void {
-        { [weak self] (newConnection: NWConnection) in
-            guard let self = self else { return }
-
-            self.connections.append(newConnection)
-
-            func receive() {
-                newConnection.receiveMessage { [weak self] data, context, _, error in
-                    guard let self = self else { return }
-                    guard error == nil else { return self.closeConnection(newConnection) }
-
-                    guard let data = data,
-                          let context = context,
-                          let _metadata = context.protocolMetadata.first,
-                          let metadata = _metadata as? NWProtocolWebSocket.Metadata
-                    else { return }
-
-                    switch metadata.opcode {
-                    case .binary:
-                        self.inputSubject.send(.data(data))
-
-                    case .text:
-                        if let text = String(data: data, encoding: .utf8) {
-                            self.inputSubject.send(.text(text))
-                        }
-
-                    default:
-                        break
-                    }
-
-                    receive()
-                }
-            }
-            receive()
-
-            newConnection.stateUpdateHandler = { [weak self] state in
-                guard let self = self else { return }
-
-                switch state {
-                case .ready:
-                    guard self.outputPublisherSubscription == nil else { break }
-                    self.outputPublisherSubscription = self.outputPublisher
-                        .receive(on: self.queue)
-                        .sink(
-                            receiveCompletion: { [weak self] completion in
-                                guard let self = self else { return }
-                                guard case .failure = completion else {
-                                    self.cancelConnection(newConnection)
-                                    return
-                                }
-                                self.close()
-                            },
-                            receiveValue: { [weak self] (output: WebSocketServerOutput) in
-                                guard let self = self else { return }
-                                switch output {
-                                case let .message(message):
-                                    self.broadcastMessage(message)
-
-                                case .remoteClose:
-                                    self.cancelConnection(newConnection)
-                                }
-                            }
-                        )
-
-                case .failed:
-                    self.cancelConnection(newConnection)
-
-                default:
-                    break
-                }
-            }
-
-            newConnection.start(queue: self.queue)
-        }
     }
 }

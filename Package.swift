@@ -18,6 +18,14 @@ let package = Package(
             url: "https://github.com/shareup/dispatch-timer.git",
             from: "2.1.2"
         ),
+        .package(
+            url: "https://github.com/vapor/websocket-kit.git",
+            from: "2.6.1"
+        ),
+        .package(
+            url: "https://github.com/apple/swift-nio.git",
+            from: "2.0.0"
+        )
     ],
     targets: [
         .target(
@@ -28,7 +36,13 @@ let package = Package(
         ),
         .testTarget(
             name: "WebSocketTests",
-            dependencies: ["WebSocket"]
+            dependencies: [
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+                .product(name: "NIOWebSocket", package: "swift-nio"),
+                "WebSocket",
+                .product(name: "WebSocketKit", package: "websocket-kit")
+            ]
         ),
     ]
 )
