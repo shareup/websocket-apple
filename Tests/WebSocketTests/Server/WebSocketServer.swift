@@ -35,24 +35,18 @@ final class WebSocketServer {
         usesTLS: Bool = false,
         maximumMessageSize: Int = 1024 * 1024
     ) throws where P.Output == WebSocketServerOutput, P.Failure == Error {
-        print("$$$ PORT: \(port)")
         self.port = port
         self.outputPublisher = outputPublisher.eraseToAnyPublisher()
         self.maximumMessageSize = maximumMessageSize
 
         eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-        do {
-            channel = try makeWebSocket(
-                on: eventLoopGroup,
-                onUpgrade: onWebSocketUpgrade
-            )
-            .bind(host: "0.0.0.0", port: Int(port))
-            .wait()
-        } catch let error as IOError where error.errnoCode == 48 {
-            // Address already in use
-            print("$$$ \(port) is already in use")
-        }
+        channel = try makeWebSocket(
+            on: eventLoopGroup,
+            onUpgrade: onWebSocketUpgrade
+        )
+        .bind(host: "127.0.0.1", port: Int(port))
+        .wait()
     }
 
     private func makeWebSocket(

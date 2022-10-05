@@ -360,7 +360,7 @@ private let empty: Empty<WebSocketServerOutput, Error> = Empty(
 )
 
 private extension SystemWebSocketTests {
-    func url(_ port: UInt16) -> URL { URL(string: "ws://0.0.0.0:\(port)/socket")! }
+    func url(_ port: UInt16) -> URL { URL(string: "ws://127.0.0.1:\(port)/socket")! }
 
     func makeServerAndClient(
         onOpen: @escaping @Sendable () -> Void = {},
