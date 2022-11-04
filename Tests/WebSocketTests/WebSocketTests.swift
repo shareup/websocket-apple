@@ -51,6 +51,8 @@ class WebSocketTests: XCTestCase {
     }
 
     func testCompleteWhenRemoteCloses() throws {
+        throw XCTSkip()
+        
         try withServer { _, client in
             var invalidUTF8Bytes = [0x192, 0x193] as [UInt16]
             let bytes = withUnsafeBytes(of: &invalidUTF8Bytes) { Array($0) }
