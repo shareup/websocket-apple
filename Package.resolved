@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/dispatch-timer.git",
       "state" : {
-        "revision" : "8ed1f10f94bd9a9752e674133c75f9da49084e17",
-        "version" : "2.1.2"
+        "revision" : "7c233b28f54d3797a6e66d54aa342f1cfc05d8db",
+        "version" : "3.0.0"
       }
     },
     {
@@ -59,8 +59,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/synchronized.git",
       "state" : {
-        "revision" : "ab58ad52ede004d65ee11b07aebb76392d9c0cec",
-        "version" : "3.1.0"
+        "revision" : "3a07451bbd0933933804c7d9a92ef2fa57b6766f",
+        "version" : "4.0.0"
       }
     },
     {
