@@ -71,9 +71,9 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     }
 
     func urlSession(
-        _ session: URLSession,
+        _: URLSession,
         webSocketTask: URLSessionWebSocketTask,
-        didOpenWithProtocol protocol: String?
+        didOpenWithProtocol _: String?
     ) {
         let taskID = ObjectIdentifier(webSocketTask)
 
@@ -83,7 +83,7 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     }
 
     func urlSession(
-        _ session: URLSession,
+        _: URLSession,
         webSocketTask: URLSessionWebSocketTask,
         didCloseWith closeCode: URLSessionWebSocketTask.CloseCode,
         reason: Data?
@@ -96,7 +96,7 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     }
 
     func urlSession(
-        _ session: URLSession,
+        _: URLSession,
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
@@ -113,7 +113,7 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
                     await onClose(.normalClosure, nil)
                 }
 
-                self?.state.access({ _ = $0.removeValue(forKey: taskID) })
+                self?.state.access { _ = $0.removeValue(forKey: taskID) }
             }
         }
     }

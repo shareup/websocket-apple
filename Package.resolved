@@ -1,6 +1,15 @@
 {
   "pins" : [
     {
+      "identity" : "async-extensions",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/shareup/async-extensions.git",
+      "state" : {
+        "revision" : "ad85ed58fbd2927beb75beaca79158eca80af5e3",
+        "version" : "2.1.0"
+      }
+    },
+    {
       "identity" : "dispatch-timer",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/dispatch-timer.git",

@@ -3,7 +3,8 @@ import Foundation
 import Synchronized
 
 public typealias WebSocketOnOpen = @Sendable () -> Void
-public typealias WebSocketOnClose = @Sendable (WebSocketClose) -> Void
+public typealias WebSocketOnClose = @Sendable (WebSocketClose)
+    -> Void
 
 public struct WebSocket: Identifiable, Sendable {
     public var id: Int
@@ -42,7 +43,7 @@ public struct WebSocket: Identifiable, Sendable {
         open: @escaping @Sendable (TimeInterval?) async throws -> Void = { _ in },
         close: @escaping @Sendable (WebSocketCloseCode, TimeInterval?) async throws
             -> Void = { _, _ in },
-        invalidateAll: @escaping @Sendable () -> Void = { },
+        invalidateAll: @escaping @Sendable () -> Void = {},
         send: @escaping @Sendable (WebSocketMessage) async throws -> Void = { _ in },
         messagesPublisher: @escaping @Sendable () -> AnyPublisher<WebSocketMessage, Never> = {
             Empty<WebSocketMessage, Never>(completeImmediately: false).eraseToAnyPublisher()
@@ -126,7 +127,7 @@ public extension WebSocket {
             onClose: ws.onClose,
             open: { timeout in try await ws.open(timeout: timeout) },
             close: { code, timeout in try await ws.close(code: code, timeout: timeout) },
-            invalidateAll: { cancelAndInvalidateAllTasks() }, 
+            invalidateAll: { cancelAndInvalidateAllTasks() },
             send: { message in try await ws.send(message) },
             messagesPublisher: { ws.eraseToAnyPublisher() }
         )

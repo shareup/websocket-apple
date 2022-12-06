@@ -2,6 +2,7 @@
 import Foundation
 import os.log
 import Synchronized
+import AsyncExtensions
 
 final actor SystemWebSocket: Publisher {
     typealias Output = WebSocketMessage
@@ -25,6 +26,9 @@ final actor SystemWebSocket: Publisher {
     private let waiter = WebSocketWaiter()
 
     private var state: State = .unopened
+
+    private var didOpen: AsyncExtensions.Future<Void>? = nil
+    private var didClose: AsyncExtensions.Future<Void>? = nil
 
     private var messageIndex = 0 // Used to identify sent messages
 
@@ -166,7 +170,7 @@ private extension SystemWebSocket {
             for: url,
             options: options,
             onOpen: { [weak self] in await self?.doOpen() },
-            onClose: { [weak self] (closeCode, reason) async -> Void in
+            onClose: { [weak self] closeCode, reason async in
                 await self?.doClose(closeCode: closeCode, reason: reason)
             }
         )
@@ -262,7 +266,6 @@ private extension SystemWebSocket {
         case .closed:
             break
         }
-
     }
 }
 

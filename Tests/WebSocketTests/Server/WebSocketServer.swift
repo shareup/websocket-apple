@@ -32,7 +32,7 @@ final class WebSocketServer {
     init<P: Publisher>(
         port: UInt16,
         outputPublisher: P,
-        usesTLS: Bool = false,
+        usesTLS _: Bool = false,
         maximumMessageSize: Int = 1024 * 1024
     ) throws where P.Output == WebSocketServerOutput, P.Failure == Error {
         self.port = port
@@ -75,7 +75,7 @@ final class WebSocketServer {
     }
 
     private var onWebSocketUpgrade: (HTTPRequestHead, WS) -> Void {
-        { [weak self] (req: HTTPRequestHead, ws: WS) in
+        { [weak self] (_: HTTPRequestHead, ws: WS) in
             guard let self else { return }
 
             let sub = self.outputPublisher
@@ -83,10 +83,10 @@ final class WebSocketServer {
                     receiveCompletion: { completion in
                         switch completion {
                         case .finished:
-                            let _ = ws.close(code:)
+                            _ = ws.close(code:)
 
                         case .failure:
-                            let _ = ws.close(code: .unexpectedServerError)
+                            _ = ws.close(code: .unexpectedServerError)
                         }
                     },
                     receiveValue: { output in
@@ -116,8 +116,8 @@ final class WebSocketServer {
             ws.onBinary { [weak self] _, buffer in
                 guard let self,
                       let data = buffer.getData(
-                        at: buffer.readerIndex,
-                        length: buffer.readableBytes
+                          at: buffer.readerIndex,
+                          length: buffer.readableBytes
                       )
                 else { return }
                 self.inputSubject.send(.data(data))

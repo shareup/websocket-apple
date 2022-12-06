@@ -124,9 +124,9 @@ final class WebSocketWaiter: Sendable {
             return (opens, closes)
         }
 
-        opens.forEach { `open` in
-            `open`.timer.invalidate()
-            `open`.continuation.resume(throwing: WebSocketError(code, reason))
+        opens.forEach { open in
+            open.timer.invalidate()
+            open.continuation.resume(throwing: WebSocketError(code, reason))
         }
         closes.forEach { close in
             close.timer.invalidate()
@@ -204,7 +204,7 @@ private struct State: Sendable {
     }
 }
 
-private extension Array where Element == Resumption {
+private extension [Resumption] {
     mutating func remove(_ id: String) -> Resumption? {
         guard let index = firstIndex(where: { $0.id == id })
         else { return nil }

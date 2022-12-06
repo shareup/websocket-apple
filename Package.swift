@@ -15,6 +15,10 @@ let package = Package(
     ],
     dependencies: [
         .package(
+            url: "https://github.com/shareup/async-extensions.git",
+            from: "2.1.0"
+        ),
+        .package(
             url: "https://github.com/shareup/dispatch-timer.git",
             from: "3.0.0"
         ),
@@ -25,12 +29,13 @@ let package = Package(
         .package(
             url: "https://github.com/apple/swift-nio.git",
             from: "2.0.0"
-        )
+        ),
     ],
     targets: [
         .target(
             name: "WebSocket",
             dependencies: [
+                .product(name: "AsyncExtensions", package: "async-extensions"),
                 .product(name: "DispatchTimer", package: "dispatch-timer"),
             ]
         ),
@@ -41,7 +46,7 @@ let package = Package(
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOWebSocket", package: "swift-nio"),
                 "WebSocket",
-                .product(name: "WebSocketKit", package: "websocket-kit")
+                .product(name: "WebSocketKit", package: "websocket-kit"),
             ]
         ),
     ]

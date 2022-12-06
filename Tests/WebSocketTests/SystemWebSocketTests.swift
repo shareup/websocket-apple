@@ -67,7 +67,7 @@ class SystemWebSocketTests: XCTestCase {
             onClose: { close in
                 DispatchQueue.main.async {
                     XCTAssertTrue(
-                        .goingAway == close.code || .cancelled == close.code
+                        close.code == .goingAway || close.code == .cancelled
                     )
                     errorEx.fulfill()
                 }
