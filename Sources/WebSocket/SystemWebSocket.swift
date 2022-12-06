@@ -4,6 +4,11 @@ import os.log
 import Synchronized
 import AsyncExtensions
 
+private typealias OpenFuture = AsyncExtensions.Future<Void>
+
+private typealias CloseFuture =
+    AsyncExtensions.Future<(code: WebSocketCloseCode, reason: Data?)>
+
 final actor SystemWebSocket: Publisher {
     typealias Output = WebSocketMessage
     typealias Failure = Never
@@ -23,12 +28,10 @@ final actor SystemWebSocket: Publisher {
     nonisolated let onOpen: WebSocketOnOpen
     nonisolated let onClose: WebSocketOnClose
 
-    private let waiter = WebSocketWaiter()
-
     private var state: State = .unopened
 
-    private var didOpen: AsyncExtensions.Future<Void>? = nil
-    private var didClose: AsyncExtensions.Future<Void>? = nil
+    private var didOpen: OpenFuture
+    private var didClose: CloseFuture? = nil
 
     private var messageIndex = 0 // Used to identify sent messages
 
@@ -55,11 +58,14 @@ final actor SystemWebSocket: Publisher {
         self.onOpen = onOpen
         self.onClose = onClose
 
+        self.didOpen = .init(timeout: options.timeoutIntervalForRequest)
+
         try connect()
     }
 
     deinit {
-        waiter.cancelAll()
+        didOpen.fail(CancellationError())
+        didClose?.fail(CancellationError())
         state.ws?.cancel()
         subject.send(completion: .finished)
     }
@@ -72,16 +78,16 @@ final actor SystemWebSocket: Publisher {
             .receive(subscriber: subscriber)
     }
 
-    func open(timeout: TimeInterval? = nil) async throws {
+    func open() async throws {
         switch state {
         case .unopened, .connecting:
             do {
-                let _timeout = timeout ?? options.timeoutIntervalForRequest
-                try await waiter.open(timeout: _timeout)
-
+                try await didOpen.value
             } catch is CancellationError {
-                doClose(closeCode: .cancelled, reason: nil)
-
+                doClose(closeCode: .cancelled, reason: Data("cancelled".utf8))
+            } catch is TimeoutError {
+                doClose(closeCode: .timeout, reason: Data("timeout".utf8))
+                throw TimeoutError()
             } catch let error as WebSocketError {
                 doClose(
                     closeCode: error.closeCode ?? .unknown,
@@ -147,10 +153,16 @@ final actor SystemWebSocket: Publisher {
             doClose(closeCode: code, reason: reason)
 
         case .connecting, .open:
-            doClose(closeCode: code, reason: reason)
-            try await waiter.close(
-                timeout: timeout ?? options.timeoutIntervalForRequest
-            )
+            if let didClose {
+                _ = try await didClose.value
+            } else {
+                let didClose = CloseFuture(
+                    timeout: timeout ?? options.timeoutIntervalForRequest
+                )
+                self.didClose = didClose
+                doClose(closeCode: code, reason: reason)
+                _ = try await didClose.value
+            }
 
         case .closed:
             doClose(closeCode: code, reason: reason)
@@ -184,7 +196,7 @@ private extension SystemWebSocket {
             os_log("open", log: .webSocket, type: .debug)
             state = .open(ws)
             onOpen()
-            waiter.didOpen()
+            didOpen.resolve()
             doReceiveMessage(ws)
 
         case .unopened:
@@ -260,7 +272,7 @@ private extension SystemWebSocket {
             let close = WebSocketClose(closeCode, nil)
             state = .closed(close)
             onClose(close)
-            waiter.didClose(code: closeCode, reason: reason)
+            didClose?.resolve((code: closeCode, reason: reason))
             subject.send(completion: .finished)
 
         case .closed:

@@ -33,7 +33,7 @@ class SystemWebSocketTests: XCTestCase {
         )
         defer { server.shutDown() }
 
-        try await client.open(timeout: 2)
+        try await client.open()
         wait(for: [openEx], timeout: 2)
 
         let isOpen = await client.isOpen

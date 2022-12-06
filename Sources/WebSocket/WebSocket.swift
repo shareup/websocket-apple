@@ -15,10 +15,10 @@ public struct WebSocket: Identifiable, Sendable {
     /// Sets a closure to be called when the WebSocket closes.
     public var onClose: WebSocketOnClose
 
-    /// Opens the WebSocket connect with an optional timeout. After this function
-    /// is awaited, the WebSocket connection is open ready to be used. If the
+    /// Opens the WebSocket connection. After this function returns,
+    /// the WebSocket connection is open ready to be used. If the
     /// connection fails or times out, an error is thrown.
-    public var open: @Sendable (TimeInterval?) async throws -> Void
+    public var open: @Sendable () async throws -> Void
 
     /// Sends a close frame to the server with the given close code.
     public var close: @Sendable (WebSocketCloseCode, TimeInterval?) async throws -> Void
@@ -40,7 +40,7 @@ public struct WebSocket: Identifiable, Sendable {
         id: Int,
         onOpen: @escaping WebSocketOnOpen = {},
         onClose: @escaping WebSocketOnClose = { _ in },
-        open: @escaping @Sendable (TimeInterval?) async throws -> Void = { _ in },
+        open: @escaping @Sendable () async throws -> Void = {},
         close: @escaping @Sendable (WebSocketCloseCode, TimeInterval?) async throws
             -> Void = { _, _ in },
         invalidateAll: @escaping @Sendable () -> Void = {},
@@ -61,11 +61,6 @@ public struct WebSocket: Identifiable, Sendable {
 }
 
 public extension WebSocket {
-    /// Calls `WebSocket.open(nil)`.
-    func open() async throws {
-        try await open(nil)
-    }
-
     /// Calls `WebSocket.close(.normalClosure, nil)`.
     func close() async throws {
         try await close(.normalClosure, nil)
@@ -125,7 +120,7 @@ public extension WebSocket {
             id: Int(bitPattern: ObjectIdentifier(ws)),
             onOpen: ws.onOpen,
             onClose: ws.onClose,
-            open: { timeout in try await ws.open(timeout: timeout) },
+            open: { try await ws.open() },
             close: { code, timeout in try await ws.close(code: code, timeout: timeout) },
             invalidateAll: { cancelAndInvalidateAllTasks() },
             send: { message in try await ws.send(message) },

@@ -69,6 +69,9 @@ public enum WebSocketCloseCode: Int, CaseIterable, Sendable {
     /// already been closed.
     case alreadyClosed = 4001
 
+    /// A code that indicates the connection timed out while opening.
+    case timeout = 4002
+
     /// A code that indicates the connection closed because of an unknown reason.
     case unknown = 4999
 }
@@ -91,6 +94,7 @@ extension WebSocketCloseCode: CustomStringConvertible {
         case .tlsHandshakeFailure: return "tlsHandshakeFailure"
         case .cancelled: return "cancelled"
         case .alreadyClosed: return "alreadyClosed"
+        case .timeout: return "timeout"
         case .unknown: return "unknown"
         }
     }
@@ -147,6 +151,7 @@ extension WebSocketCloseCode {
         case .tlsHandshakeFailure: return .tlsHandshakeFailure
         case .cancelled: return nil
         case .alreadyClosed: return nil
+        case .timeout: return nil
         case .unknown: return nil
         }
     }
