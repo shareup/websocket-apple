@@ -1,8 +1,8 @@
+import AsyncExtensions
 @preconcurrency import Combine
 import Foundation
 import os.log
 import Synchronized
-import AsyncExtensions
 
 private typealias OpenFuture = AsyncExtensions.Future<Void>
 
@@ -31,7 +31,7 @@ final actor SystemWebSocket: Publisher {
     private var state: State = .unopened
 
     private var didOpen: OpenFuture
-    private var didClose: CloseFuture? = nil
+    private var didClose: CloseFuture?
 
     private var messageIndex = 0 // Used to identify sent messages
 
@@ -58,7 +58,7 @@ final actor SystemWebSocket: Publisher {
         self.onOpen = onOpen
         self.onClose = onClose
 
-        self.didOpen = .init(timeout: options.timeoutIntervalForRequest)
+        didOpen = .init(timeout: options.timeoutIntervalForRequest)
 
         try connect()
     }
