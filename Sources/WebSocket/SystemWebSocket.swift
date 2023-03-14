@@ -1,6 +1,6 @@
 import AsyncExtensions
 @preconcurrency import Combine
-import Foundation
+@preconcurrency import Foundation
 import os.log
 import Synchronized
 

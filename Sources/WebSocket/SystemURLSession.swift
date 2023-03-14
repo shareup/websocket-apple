@@ -4,8 +4,8 @@ import Synchronized
 func webSocketTask(
     for url: URL,
     options: WebSocketOptions,
-    onOpen: @escaping () async -> Void,
-    onClose: @escaping (WebSocketCloseCode, Data?) async -> Void
+    onOpen: @escaping @Sendable () async -> Void,
+    onClose: @escaping @Sendable (WebSocketCloseCode, Data?) async -> Void
 ) -> URLSessionWebSocketTask {
     let session = session(for: options)
 
@@ -54,17 +54,17 @@ private func configuration(with options: WebSocketOptions) -> URLSessionConfigur
 }
 
 private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
-    private struct Callbacks {
-        let onOpen: () async -> Void
-        let onClose: (WebSocketCloseCode, Data?) async -> Void
+    private struct Callbacks: Sendable {
+        let onOpen: @Sendable () async -> Void
+        let onClose: @Sendable (WebSocketCloseCode, Data?) async -> Void
     }
 
     // `Dictionary<ObjectIdentifier(URLWebSocketTask): Callbacks>`
     private let state: Locked<[ObjectIdentifier: Callbacks]> = .init([:])
 
     func set(
-        onOpen: @escaping () async -> Void,
-        onClose: @escaping (WebSocketCloseCode, Data?) async -> Void,
+        onOpen: @escaping @Sendable () async -> Void,
+        onClose: @escaping @Sendable (WebSocketCloseCode, Data?) async -> Void,
         for taskID: ObjectIdentifier
     ) {
         state.access { $0[taskID] = .init(onOpen: onOpen, onClose: onClose) }
