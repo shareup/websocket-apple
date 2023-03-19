@@ -3,7 +3,7 @@ import Synchronized
 @testable import WebSocket
 import XCTest
 
-private var ports = (50000 ... 52000).map { UInt16($0) }
+private var ports = (50_000 ... 52_000).map { UInt16($0) }
 
 // NOTE: If `WebSocketTests` is not marked as `@MainActor`, calls to
 // `wait(for:timeout:)` prevent other asyncronous events from running.
@@ -382,7 +382,7 @@ private extension SystemWebSocketTests {
         onClose: @escaping @Sendable (WebSocketClose) -> Void = { _ in }
     ) async throws -> (WebSocketServer, SystemWebSocket) {
         let port = ports.removeFirst()
-        let server = try WebSocketServer(port: 52001, outputPublisher: empty)
+        let server = try WebSocketServer(port: 52_001, outputPublisher: empty)
         let client = try! await SystemWebSocket(
             url: url(port),
             options: .init(timeoutIntervalForRequest: 2),
