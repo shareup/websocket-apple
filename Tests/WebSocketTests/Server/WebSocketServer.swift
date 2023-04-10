@@ -78,7 +78,7 @@ final class WebSocketServer {
         { [weak self] (_: HTTPRequestHead, ws: WS) in
             guard let self else { return }
 
-            let sub = self.outputPublisher
+            let sub = outputPublisher
                 .sink(
                     receiveCompletion: { completion in
                         switch completion {
@@ -107,7 +107,7 @@ final class WebSocketServer {
                     }
                 )
 
-            self.outputPublisherSubscription = sub
+            outputPublisherSubscription = sub
 
             ws.onText { [weak self] _, text in
                 self?.inputSubject.send(.text(text))
@@ -120,7 +120,7 @@ final class WebSocketServer {
                           length: buffer.readableBytes
                       )
                 else { return }
-                self.inputSubject.send(.data(data))
+                inputSubject.send(.data(data))
             }
         }
     }

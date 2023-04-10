@@ -233,7 +233,7 @@ private extension SystemWebSocket {
                     type: .debug,
                     message.description
                 )
-                self.subject.send(message)
+                subject.send(message)
                 Task { [weak self] in await self?.doReceiveMessage(ws) }
 
             case let .failure(error):
