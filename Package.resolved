@@ -5,8 +5,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/async-extensions.git",
       "state" : {
-        "revision" : "327714b7021127d28f99f5a451ac564d04a8884b",
-        "version" : "4.0.0"
+        "revision" : "59504194f84b8c66a27503b5fd0640ac9b01f42a",
+        "version" : "4.1.0"
       }
     },
     {
@@ -14,8 +14,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/dispatch-timer.git",
       "state" : {
-        "revision" : "7c233b28f54d3797a6e66d54aa342f1cfc05d8db",
-        "version" : "3.0.0"
+        "revision" : "2d8c304aa6f382a7a362cd5a814884f3930c5662",
+        "version" : "3.0.1"
       }
     },
     {
@@ -23,8 +23,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-atomics.git",
       "state" : {
-        "revision" : "ff3d2212b6b093db7f177d0855adbc4ef9c5f036",
-        "version" : "1.0.3"
+        "revision" : "6c89474e62719ddcc1e9614989fff2f68208fe10",
+        "version" : "1.1.0"
       }
     },
     {
@@ -41,8 +41,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-nio.git",
       "state" : {
-        "revision" : "45167b8006448c79dda4b7bd604e07a034c15c49",
-        "version" : "2.48.0"
+        "revision" : "9b2848d76f5caad08b97e71a04345aa5bdb23a06",
+        "version" : "2.49.0"
       }
     },
     {
@@ -68,8 +68,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/shareup/synchronized.git",
       "state" : {
-        "revision" : "3a07451bbd0933933804c7d9a92ef2fa57b6766f",
-        "version" : "4.0.0"
+        "revision" : "85653e23270ec88ae19f8d494157769487e34aed",
+        "version" : "4.0.1"
       }
     },
     {
