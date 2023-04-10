@@ -18,12 +18,7 @@ class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
         ]
 
         zip(urlSessionCloseCodes, closeCodes).forEach { urlSessionCloseCode, closeCode in
-            XCTAssertEqual(urlSessionCloseCode, URLSessionWebSocketTask.CloseCode(closeCode))
+            XCTAssertEqual(urlSessionCloseCode, closeCode.wsCloseCode)
         }
-    }
-
-    func testAllWebSocketCloseCodesHaveCorrespondingURLSessionCloseCodes() throws {
-        WebSocketCloseCode.allCases
-            .forEach { XCTAssertNotNil(URLSessionWebSocketTask.CloseCode($0)) }
     }
 }

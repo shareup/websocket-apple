@@ -1,70 +1,87 @@
 import Combine
 import Foundation
+import Synchronized
 
-public typealias WebSocketOnOpen = () -> Void
-public typealias WebSocketOnClose = (WebSocketCloseResult) -> Void
+public typealias WebSocketOnOpen = @Sendable () -> Void
+public typealias WebSocketOnClose = @Sendable (WebSocketClose)
+    -> Void
 
-public struct WebSocket {
+public struct WebSocket: Identifiable, Sendable {
+    public var id: Int
+
     /// Sets a closure to be called when the WebSocket connects successfully.
-    public var onOpen: (@escaping WebSocketOnOpen) async -> Void
+    public var onOpen: WebSocketOnOpen
 
     /// Sets a closure to be called when the WebSocket closes.
-    public var onClose: (@escaping WebSocketOnClose) async -> Void
+    public var onClose: WebSocketOnClose
 
-    /// Opens the WebSocket connect with an optional timeout. After this function
-    /// is awaited, the WebSocket connection is open ready to be used. If the
+    /// Opens the WebSocket connection. After this function returns,
+    /// the WebSocket connection is open ready to be used. If the
     /// connection fails or times out, an error is thrown.
-    public var open: (TimeInterval?) async throws -> Void
+    public var open: @Sendable () async throws -> Void
 
     /// Sends a close frame to the server with the given close code.
-    public var close: (WebSocketCloseCode) async throws -> Void
+    public var close: @Sendable (WebSocketCloseCode, TimeInterval?) async throws -> Void
+
+    /// Invalidates **all** WebSocket connections. It should only be used
+    /// when all WebSocket connections in the current process need to be
+    /// cancelled.
+    public var invalidateAll: @Sendable () -> Void
 
     /// Sends a text or binary message.
-    public var send: (WebSocketMessage) async throws -> Void
+    public var send: @Sendable (WebSocketMessage) async throws -> Void
 
     /// Publishes messages received from WebSocket. Finishes when the
     /// WebSocket connection closes.
-    public var messagesPublisher: () -> AnyPublisher<WebSocketMessage, Never>
+    public var messagesPublisher: @Sendable ()
+        -> AnyPublisher<WebSocketMessage, Never>
 
     public init(
-        onOpen: @escaping (@escaping WebSocketOnOpen) async -> Void = { _ in },
-        onClose: @escaping (@escaping WebSocketOnClose) async -> Void = { _ in },
-        open: @escaping (TimeInterval?) async throws -> Void = { _ in },
-        close: @escaping (WebSocketCloseCode) async throws -> Void = { _ in },
-        send: @escaping (WebSocketMessage) async throws -> Void = { _ in },
-        messagesPublisher: @escaping () -> AnyPublisher<WebSocketMessage, Never> = {
+        id: Int,
+        onOpen: @escaping WebSocketOnOpen = {},
+        onClose: @escaping WebSocketOnClose = { _ in },
+        open: @escaping @Sendable () async throws -> Void = {},
+        close: @escaping @Sendable (WebSocketCloseCode, TimeInterval?) async throws
+            -> Void = { _, _ in },
+        invalidateAll: @escaping @Sendable () -> Void = {},
+        send: @escaping @Sendable (WebSocketMessage) async throws -> Void = { _ in },
+        messagesPublisher: @escaping @Sendable () -> AnyPublisher<WebSocketMessage, Never> = {
             Empty<WebSocketMessage, Never>(completeImmediately: false).eraseToAnyPublisher()
         }
     ) {
+        self.id = id
         self.onOpen = onOpen
         self.onClose = onClose
         self.open = open
         self.close = close
+        self.invalidateAll = invalidateAll
         self.send = send
         self.messagesPublisher = messagesPublisher
     }
 }
 
 public extension WebSocket {
-    /// Calls `WebSocket.open(nil)`.
-    func open() async throws {
-        try await open(nil)
+    /// Calls `WebSocket.close(.normalClosure, nil)`.
+    func close() async throws {
+        try await close(.normalClosure, nil)
     }
 
-    /// Calls `WebSocket.close(closeCode: .goingAway)`.
-    func close() async throws {
-        try await close(.goingAway)
+    /// Calls `WebSocket.close(.normalClosure, timeout)`.
+    func close(timeout: TimeInterval) async throws {
+        try await close(.normalClosure, timeout)
     }
 
     /// The WebSocket's received messages as an asynchronous stream.
     var messages: AsyncStream<WebSocketMessage> {
-        var cancellable: AnyCancellable?
+        let cancellable = Locked<AnyCancellable?>(nil)
 
         return AsyncStream { cont in
             func finish() {
-                if cancellable != nil {
-                    cont.finish()
-                    cancellable = nil
+                cancellable.access { cancellable in
+                    if cancellable != nil {
+                        cont.finish()
+                        cancellable = nil
+                    }
                 }
             }
 
@@ -75,13 +92,13 @@ public extension WebSocket {
                     receiveValue: { cont.yield($0) }
                 )
 
-            cancellable = _cancellable
+            cancellable.access { $0 = _cancellable }
         }
     }
 }
 
 public extension WebSocket {
-    /// System WebSocket implementation powered by the Network Framework.
+    /// System WebSocket implementation powered by `URLSessionWebSocketTask`.
     static func system(
         url: URL,
         options: WebSocketOptions = .init(),
@@ -100,10 +117,12 @@ public extension WebSocket {
     // This is only intended for use in tests.
     internal static func system(_ ws: SystemWebSocket) async throws -> Self {
         Self(
-            onOpen: { onOpen in await ws.onOpen(onOpen) },
-            onClose: { onClose in await ws.onClose(onClose) },
-            open: { timeout in try await ws.open(timeout: timeout) },
-            close: { code in try await ws.close(code) },
+            id: Int(bitPattern: ObjectIdentifier(ws)),
+            onOpen: ws.onOpen,
+            onClose: ws.onClose,
+            open: { try await ws.open() },
+            close: { code, timeout in try await ws.close(code: code, timeout: timeout) },
+            invalidateAll: { cancelAndInvalidateAllTasks() },
             send: { message in try await ws.send(message) },
             messagesPublisher: { ws.eraseToAnyPublisher() }
         )

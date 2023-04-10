@@ -4,11 +4,26 @@
 
 A concrete implementation of a WebSocket client implemented by wrapping Apple's [`NWConnection`](https://developer.apple.com/documentation/network/nwconnection).
 
-The public "interface" of `WebSocket` is a simple struct whose public "methods" are exposed as closures. The reason for this design is to make it easy to inject fake `WebSocket`s into your code for testing purposes.
+The public interface of `WebSocket` is a simple struct whose public methods are exposed as closures. The reason for this design is to make it easy to inject fake WebSockets into your code for testing purposes.
 
 The actual implementation is `SystemWebSocket`, but this type is not publicly accessible. Instead, you can access it via `WebSocket.system(url:)`. `SystemWebSocket` tries its best to mirror the documented behavior of web browsers' [`WebSocket`](http://developer.mozilla.org/en-US/docs/Web/API/WebSocket). Please report any deviations as bugs.
 
-`WebSocket` exposes a simple API, makes heavy use of [Swift Concurrency](https://developer.apple.com/documentation/swift/swift_standard_library/concurrency), and conforms to Apple's Combine [`Publisher`](https://developer.apple.com/documentation/combine/publisher).
+`WebSocket` exposes a simple API and makes heavy use of [Swift Concurrency](https://developer.apple.com/documentation/swift/swift_standard_library/concurrency).
+
+## Installation
+
+To use WebSocket, add a dependency to your Package.swift file:
+
+```swift
+let package = Package(
+  dependencies: [
+    .package(
+      url: "https://github.com/shareup/websocket-apple.git",
+      from: "4.0.0"
+    )
+  ]
+)
+```
 
 ## Usage
 

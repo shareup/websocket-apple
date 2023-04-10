@@ -1,3 +1,8 @@
+--disable     \
+  hoistAwait, \
+  hoistTry
+
+--decimalgrouping 3,5
 --funcattributes prev-line
 --minversion 0.47.2
 --maxwidth 96
@@ -5,4 +10,3 @@
 --wraparguments before-first
 --wrapparameters before-first
 --wrapcollections before-first
---xcodeindentation enabled

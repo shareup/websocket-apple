@@ -1,16 +1,14 @@
-name: Test
+name: CI
 
-on: 
-  push:
+on: push
 
 jobs:
-  test:
-    name: Test
+  library:
     runs-on: macos-latest
     
     steps:
-      - uses: actions/checkout@v2
-      - name: Build
-        run: swift build -v
+      - uses: actions/checkout@v3
+      - name: Select Xcode 14
+        run: sudo xcode-select -s /Applications/Xcode_14.3.app
       - name: Test
-        run: swift test -v
+        run: swift test

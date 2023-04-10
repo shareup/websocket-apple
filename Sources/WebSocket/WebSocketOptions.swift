@@ -1,6 +1,6 @@
 import Foundation
 
-public struct WebSocketOptions: Hashable {
+public struct WebSocketOptions: Hashable, Sendable {
     public var maximumMessageSize: Int
     public var timeoutIntervalForRequest: TimeInterval
     public var timeoutIntervalForResource: TimeInterval
