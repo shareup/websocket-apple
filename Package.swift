@@ -37,12 +37,6 @@ let package = Package(
             dependencies: [
                 .product(name: "AsyncExtensions", package: "async-extensions"),
                 .product(name: "DispatchTimer", package: "dispatch-timer"),
-            ],
-            swiftSettings: [
-                .unsafeFlags([
-                    "-Xfrontend", "-warn-concurrency",
-                    "-Xfrontend", "-enable-actor-data-race-checks",
-                ]),
             ]
         ),
         .testTarget(
