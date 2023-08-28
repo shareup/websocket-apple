@@ -6,8 +6,9 @@ import Synchronized
 
 private typealias OpenFuture = AsyncThrowingFuture<Void>
 
-private typealias CloseFuture =
-AsyncThrowingFuture<(code: WebSocketCloseCode, reason: Data?)>
+private typealias CloseFuture = AsyncThrowingFuture<
+    (code: WebSocketCloseCode, reason: Data?)
+>
 
 final actor SystemWebSocket: Publisher {
     typealias Output = WebSocketMessage
