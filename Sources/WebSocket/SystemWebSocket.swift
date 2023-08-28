@@ -4,10 +4,11 @@ import AsyncExtensions
 import os.log
 import Synchronized
 
-private typealias OpenFuture = AsyncExtensions.Future<Void>
+private typealias OpenFuture = AsyncThrowingFuture<Void>
 
-private typealias CloseFuture =
-    AsyncExtensions.Future<(code: WebSocketCloseCode, reason: Data?)>
+private typealias CloseFuture = AsyncThrowingFuture<
+    (code: WebSocketCloseCode, reason: Data?)
+>
 
 final actor SystemWebSocket: Publisher {
     typealias Output = WebSocketMessage
