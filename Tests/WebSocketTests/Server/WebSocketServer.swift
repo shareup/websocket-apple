@@ -15,7 +15,9 @@ enum WebSocketServerOutput: Hashable {
 private typealias WS = WebSocketKit.WebSocket
 
 final class WebSocketServer {
-    let port: UInt16
+    var port: Int { _port! }
+    private var _port: Int?
+
     let maximumMessageSize: Int
 
     // Publisher provided by consumers of `WebSocketServer` to provide the output
@@ -30,12 +32,9 @@ final class WebSocketServer {
     private var channel: Channel?
 
     init<P: Publisher>(
-        port: UInt16,
         outputPublisher: P,
-        usesTLS _: Bool = false,
         maximumMessageSize: Int = 1024 * 1024
     ) throws where P.Output == WebSocketServerOutput, P.Failure == Error {
-        self.port = port
         self.outputPublisher = outputPublisher.eraseToAnyPublisher()
         self.maximumMessageSize = maximumMessageSize
 
@@ -45,8 +44,15 @@ final class WebSocketServer {
             on: eventLoopGroup,
             onUpgrade: onWebSocketUpgrade
         )
-        .bind(host: "127.0.0.1", port: Int(port))
+        .bind(to: SocketAddress(
+            ipAddress: "127.0.0.1",
+            port: 0 // random port
+        ))
         .wait()
+
+        if let port = channel?.localAddress?.port {
+            _port = port
+        }
     }
 
     private func makeWebSocket(
@@ -54,17 +60,21 @@ final class WebSocketServer {
         onUpgrade: @escaping (HTTPRequestHead, WS) -> Void
     ) -> ServerBootstrap {
         ServerBootstrap(group: eventLoopGroup)
-            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
-            .childChannelInitializer { (channel: Channel) in
+            .serverChannelOption(
+                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
+                value: 1
+            )
+            .childChannelInitializer { channel in
                 let ws = NIOWebSocketServerUpgrader(
                     shouldUpgrade: { channel, _ in
                         channel.eventLoop.makeSucceededFuture([:])
                     },
                     upgradePipelineHandler: { channel, req in
-                        WS.server(on: channel) { onUpgrade(req, $0) }
+                        WebSocket.server(on: channel) { ws in
+                            onUpgrade(req, ws)
+                        }
                     }
                 )
-
                 return channel.pipeline.configureHTTPServerPipeline(
                     withServerUpgrade: (
                         upgraders: [ws],

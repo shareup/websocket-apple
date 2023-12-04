@@ -1,6 +1,6 @@
 import AsyncExtensions
 @preconcurrency import Combine
-@preconcurrency import Foundation
+import Foundation
 import os.log
 import Synchronized
 
@@ -292,28 +292,28 @@ private extension SystemWebSocket {
         var ws: URLSessionWebSocketTask? {
             switch self {
             case let .connecting(ws), let .open(ws):
-                return ws
+                ws
 
             case .unopened, .closed:
-                return nil
+                nil
             }
         }
 
         var description: String {
             switch self {
-            case .unopened: return "unopened"
-            case .connecting: return "connecting"
-            case .open: return "open"
-            case .closed: return "closed"
+            case .unopened: "unopened"
+            case .connecting: "connecting"
+            case .open: "open"
+            case .closed: "closed"
             }
         }
 
         var debugDescription: String {
             switch self {
-            case .unopened: return "unopened"
-            case let .connecting(ws): return "connecting(\(String(reflecting: ws)))"
-            case let .open(ws): return "open(\(String(reflecting: ws)))"
-            case let .closed(error): return "closed(\(error.description))"
+            case .unopened: "unopened"
+            case let .connecting(ws): "connecting(\(String(reflecting: ws)))"
+            case let .open(ws): "open(\(String(reflecting: ws)))"
+            case let .closed(error): "closed(\(error.description))"
             }
         }
     }
