@@ -79,23 +79,23 @@ public enum WebSocketCloseCode: Int, CaseIterable, Sendable {
 extension WebSocketCloseCode: CustomStringConvertible {
     public var description: String {
         switch self {
-        case .invalid: return "invalid"
-        case .normalClosure: return "normalClosure"
-        case .goingAway: return "goingAway"
-        case .protocolError: return "protocolError"
-        case .unsupportedData: return "unsupportedData"
-        case .noStatusReceived: return "noStatusReceived"
-        case .abnormalClosure: return "abnormalClosure"
-        case .invalidFramePayloadData: return "invalidFramePayloadData"
-        case .policyViolation: return "policyViolation"
-        case .messageTooBig: return "messageTooBig"
-        case .mandatoryExtensionMissing: return "mandatoryExtensionMissing"
-        case .internalServerError: return "internalServerError"
-        case .tlsHandshakeFailure: return "tlsHandshakeFailure"
-        case .cancelled: return "cancelled"
-        case .alreadyClosed: return "alreadyClosed"
-        case .timeout: return "timeout"
-        case .unknown: return "unknown"
+        case .invalid: "invalid"
+        case .normalClosure: "normalClosure"
+        case .goingAway: "goingAway"
+        case .protocolError: "protocolError"
+        case .unsupportedData: "unsupportedData"
+        case .noStatusReceived: "noStatusReceived"
+        case .abnormalClosure: "abnormalClosure"
+        case .invalidFramePayloadData: "invalidFramePayloadData"
+        case .policyViolation: "policyViolation"
+        case .messageTooBig: "messageTooBig"
+        case .mandatoryExtensionMissing: "mandatoryExtensionMissing"
+        case .internalServerError: "internalServerError"
+        case .tlsHandshakeFailure: "tlsHandshakeFailure"
+        case .cancelled: "cancelled"
+        case .alreadyClosed: "alreadyClosed"
+        case .timeout: "timeout"
+        case .unknown: "unknown"
         }
     }
 }
@@ -136,23 +136,23 @@ extension WebSocketCloseCode {
 
     var wsCloseCode: URLSessionWebSocketTask.CloseCode? {
         switch self {
-        case .invalid: return .invalid
-        case .normalClosure: return .normalClosure
-        case .goingAway: return .goingAway
-        case .protocolError: return .protocolError
-        case .unsupportedData: return .unsupportedData
-        case .noStatusReceived: return .noStatusReceived
-        case .abnormalClosure: return .abnormalClosure
-        case .invalidFramePayloadData: return .invalidFramePayloadData
-        case .policyViolation: return .policyViolation
-        case .messageTooBig: return .messageTooBig
-        case .mandatoryExtensionMissing: return .mandatoryExtensionMissing
-        case .internalServerError: return .internalServerError
-        case .tlsHandshakeFailure: return .tlsHandshakeFailure
-        case .cancelled: return nil
-        case .alreadyClosed: return nil
-        case .timeout: return nil
-        case .unknown: return nil
+        case .invalid: .invalid
+        case .normalClosure: .normalClosure
+        case .goingAway: .goingAway
+        case .protocolError: .protocolError
+        case .unsupportedData: .unsupportedData
+        case .noStatusReceived: .noStatusReceived
+        case .abnormalClosure: .abnormalClosure
+        case .invalidFramePayloadData: .invalidFramePayloadData
+        case .policyViolation: .policyViolation
+        case .messageTooBig: .messageTooBig
+        case .mandatoryExtensionMissing: .mandatoryExtensionMissing
+        case .internalServerError: .internalServerError
+        case .tlsHandshakeFailure: .tlsHandshakeFailure
+        case .cancelled: nil
+        case .alreadyClosed: nil
+        case .timeout: nil
+        case .unknown: nil
         }
     }
 }

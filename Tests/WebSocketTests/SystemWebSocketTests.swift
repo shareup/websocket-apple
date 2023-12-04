@@ -3,8 +3,6 @@ import Synchronized
 @testable import WebSocket
 import XCTest
 
-private var ports = (50_000 ... 52_000).map { UInt16($0) }
-
 // NOTE: If `WebSocketTests` is not marked as `@MainActor`, calls to
 // `wait(for:timeout:)` prevent other asyncronous events from running.
 // Using `await waitForExpectations(timeout:handler:)` works properly
@@ -360,16 +358,15 @@ private let empty: Empty<WebSocketServerOutput, Error> = Empty(
 )
 
 private extension SystemWebSocketTests {
-    func url(_ port: UInt16) -> URL { URL(string: "ws://127.0.0.1:\(port)/socket")! }
+    func url(_ port: Int) -> URL { URL(string: "ws://127.0.0.1:\(port)/socket")! }
 
     func makeServerAndClient(
         onOpen: @escaping @Sendable () -> Void = {},
         onClose: @escaping @Sendable (WebSocketClose) -> Void = { _ in }
     ) async throws -> (WebSocketServer, SystemWebSocket) {
-        let port = ports.removeFirst()
-        let server = try WebSocketServer(port: port, outputPublisher: subject)
+        let server = try WebSocketServer(outputPublisher: subject)
         let client = try! await SystemWebSocket(
-            url: url(port),
+            url: url(server.port),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
@@ -381,10 +378,9 @@ private extension SystemWebSocketTests {
         onOpen: @escaping @Sendable () -> Void = {},
         onClose: @escaping @Sendable (WebSocketClose) -> Void = { _ in }
     ) async throws -> (WebSocketServer, SystemWebSocket) {
-        let port = ports.removeFirst()
-        let server = try WebSocketServer(port: 52_001, outputPublisher: empty)
+        let server = try WebSocketServer(outputPublisher: empty)
         let client = try! await SystemWebSocket(
-            url: url(port),
+            url: url(19),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
@@ -396,10 +392,9 @@ private extension SystemWebSocketTests {
         onOpen: @escaping @Sendable () -> Void = {},
         onClose: @escaping @Sendable (WebSocketClose) -> Void = { _ in }
     ) async throws -> (WebSocketServer, WebSocket) {
-        let port = ports.removeFirst()
-        let server = try WebSocketServer(port: port, outputPublisher: subject)
+        let server = try WebSocketServer(outputPublisher: subject)
         let client = try! await SystemWebSocket(
-            url: url(port),
+            url: url(server.port),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose

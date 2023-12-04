@@ -15,15 +15,15 @@ public struct WebSocketClose: Hashable, CustomStringConvertible, Sendable {
 public extension WebSocketClose {
     var isNormal: Bool {
         switch code {
-        case .normalClosure: return true
-        default: return false
+        case .normalClosure: true
+        default: false
         }
     }
 
     var isCancelled: Bool {
         switch code {
-        case .cancelled: return true
-        default: return false
+        case .cancelled: true
+        default: false
         }
     }
 }

@@ -11,8 +11,8 @@ public enum WebSocketMessage: CustomStringConvertible, Hashable, Sendable {
 
     public var description: String {
         switch self {
-        case let .data(data): return String(decoding: data.prefix(100), as: UTF8.self)
-        case let .text(text): return text
+        case let .data(data): String(decoding: data.prefix(100), as: UTF8.self)
+        case let .text(text): text
         }
     }
 }
@@ -21,10 +21,10 @@ public extension WebSocketMessage {
     var stringValue: String? {
         switch self {
         case let .data(data):
-            return String(data: data, encoding: .utf8)
+            String(data: data, encoding: .utf8)
 
         case let .text(text):
-            return text
+            text
         }
     }
 }
@@ -45,8 +45,8 @@ extension WebSocketMessage {
 
     var wsMessage: URLSessionWebSocketTask.Message {
         switch self {
-        case let .data(data): return .data(data)
-        case let .text(text): return .string(text)
+        case let .data(data): .data(data)
+        case let .text(text): .string(text)
         }
     }
 }
