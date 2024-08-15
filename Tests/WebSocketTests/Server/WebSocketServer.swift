@@ -50,7 +50,7 @@ final class WebSocketServer {
                     ) else { return }
                     self?.inputSubject.send(.data(data))
                 }
-            }.bind(host: "localhost", port: 0).wait()
+            }.bind(host: "127.0.0.1", port: 0).wait()
     }
 
     private func subscribeToOutputPublisher(_ ws: WebSocketKit.WebSocket) {
