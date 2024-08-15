@@ -2,11 +2,11 @@
 
 ## _(macOS, iOS, iPadOS, tvOS, and watchOS)_
 
-A concrete implementation of a WebSocket client implemented by wrapping Apple's [`NWConnection`](https://developer.apple.com/documentation/network/nwconnection).
+A concrete implementation of a WebSocket client implemented by wrapping Apple's [`URLSessionWebSocketTask`](https://developer.apple.com/documentation/foundation/urlsessionwebsockettask).
 
 The public interface of `WebSocket` is a simple struct whose public methods are exposed as closures. The reason for this design is to make it easy to inject fake WebSockets into your code for testing purposes.
 
-The actual implementation is `SystemWebSocket`, but this type is not publicly accessible. Instead, you can access it via `WebSocket.system(url:)`. `SystemWebSocket` tries its best to mirror the documented behavior of web browsers' [`WebSocket`](http://developer.mozilla.org/en-US/docs/Web/API/WebSocket). Please report any deviations as bugs.
+The actual implementation is `SystemWebSocket`, but this type is not publicly accessible. Instead, you can access it via `WebSocket.system(url:)` or `WebSocket.system(request:)`. `SystemWebSocket` tries its best to mirror the documented behavior of web browsers' [`WebSocket`](http://developer.mozilla.org/en-US/docs/Web/API/WebSocket). Please report any deviations as bugs.
 
 `WebSocket` exposes a simple API and makes heavy use of [Swift Concurrency](https://developer.apple.com/documentation/swift/swift_standard_library/concurrency).
 
@@ -49,3 +49,7 @@ try await socket.close()
 
 1. In your Terminal, navigate to the `websocket-apple` directory
 2. Run the tests using `swift test`
+
+## Notices
+
+This library includes code from [WebSocketKit](https://github.com/vapor/websocket-kit) and [SwiftNIO](https://github.com/apple/swift-nio), the use of which depends on their licenses.

@@ -105,8 +105,23 @@ public extension WebSocket {
         onOpen: @escaping WebSocketOnOpen = {},
         onClose: @escaping WebSocketOnClose = { _ in }
     ) async throws -> Self {
+        try await system(
+            request: URLRequest(url: url),
+            options: options,
+            onOpen: onOpen,
+            onClose: onClose
+        )
+    }
+
+    /// System WebSocket implementation powered by `URLSessionWebSocketTask`.
+    static func system(
+        request: URLRequest,
+        options: WebSocketOptions = .init(),
+        onOpen: @escaping WebSocketOnOpen = {},
+        onClose: @escaping WebSocketOnClose = { _ in }
+    ) async throws -> Self {
         let ws = try await SystemWebSocket(
-            url: url,
+            request: request,
             options: options,
             onOpen: onOpen,
             onClose: onClose

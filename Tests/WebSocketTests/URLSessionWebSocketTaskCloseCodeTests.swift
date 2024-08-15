@@ -17,7 +17,7 @@ class URLSessionWebSocketTaskCloseCodeTests: XCTestCase {
             .tlsHandshakeFailure,
         ]
 
-        zip(urlSessionCloseCodes, closeCodes).forEach { urlSessionCloseCode, closeCode in
+        for (urlSessionCloseCode, closeCode) in zip(urlSessionCloseCodes, closeCodes) {
             XCTAssertEqual(urlSessionCloseCode, closeCode.wsCloseCode)
         }
     }

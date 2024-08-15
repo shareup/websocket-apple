@@ -3,16 +3,9 @@ import Synchronized
 @testable import WebSocket
 import XCTest
 
-// NOTE: If `WebSocketTests` is not marked as `@MainActor`, calls to
-// `wait(for:timeout:)` prevent other asyncronous events from running.
-// Using `await waitForExpectations(timeout:handler:)` works properly
-// because it's already marked as `@MainActor`.
-
-@MainActor
 class SystemWebSocketTests: XCTestCase {
     var subject: PassthroughSubject<WebSocketServerOutput, Error>!
 
-    @MainActor
     override func setUp() async throws {
         try await super.setUp()
         subject = .init()
@@ -32,13 +25,13 @@ class SystemWebSocketTests: XCTestCase {
         defer { server.shutDown() }
 
         try await client.open()
-        await _fulfillment(of: [openEx], timeout: 2)
+        await fulfillment(of: [openEx], timeout: 2)
 
         let isOpen = await client.isOpen
         XCTAssertTrue(isOpen)
 
         try await client.close()
-        await _fulfillment(of: [closeEx], timeout: 2)
+        await fulfillment(of: [closeEx], timeout: 2)
     }
 
     func testErrorWhenServerIsUnreachable() async throws {
@@ -53,7 +46,7 @@ class SystemWebSocketTests: XCTestCase {
         )
         defer { server.shutDown() }
 
-        await _fulfillment(of: [ex], timeout: 2)
+        await fulfillment(of: [ex], timeout: 2)
 
         let isClosed = await client.isClosed
         XCTAssertTrue(isClosed)
@@ -79,7 +72,7 @@ class SystemWebSocketTests: XCTestCase {
         catch {}
 
         subject.send(.remoteClose)
-        await _fulfillment(of: [errorEx], timeout: 2)
+        await fulfillment(of: [errorEx], timeout: 2)
     }
 
     func testWebSocketCannotBeOpenedTwice() async throws {
@@ -107,7 +100,7 @@ class SystemWebSocketTests: XCTestCase {
         try await client.open()
 
         try await client.close()
-        await _fulfillment(of: [firstCloseEx], timeout: 2)
+        await fulfillment(of: [firstCloseEx], timeout: 2)
 
         do {
             try await client.open()
@@ -118,7 +111,7 @@ class SystemWebSocketTests: XCTestCase {
             else { return XCTFail("Received wrong error: \(error)") }
         }
 
-        await _fulfillment(of: [secondCloseEx], timeout: 0.1)
+        await fulfillment(of: [secondCloseEx], timeout: 0.1)
     }
 
     func testPushAndReceiveText() async throws {
@@ -147,9 +140,9 @@ class SystemWebSocketTests: XCTestCase {
         defer { receivedSub.cancel() }
 
         try await client.send(.text("hello"))
-        await _fulfillment(of: [sentEx], timeout: 2)
+        await fulfillment(of: [sentEx], timeout: 2)
         subject.send(.message(.text("hi, to you too!")))
-        await _fulfillment(of: [receivedEx], timeout: 2)
+        await fulfillment(of: [receivedEx], timeout: 2)
     }
 
     @available(iOS 15.0, macOS 12.0, *)
@@ -198,9 +191,9 @@ class SystemWebSocketTests: XCTestCase {
         defer { receivedSub.cancel() }
 
         try await client.send(.data(Data("hello".utf8)))
-        await _fulfillment(of: [sentEx], timeout: 2)
+        await fulfillment(of: [sentEx], timeout: 2)
         subject.send(.message(.data(Data("hi, to you too!".utf8))))
-        await _fulfillment(of: [receivedEx], timeout: 2)
+        await fulfillment(of: [receivedEx], timeout: 2)
     }
 
     @available(iOS 15.0, macOS 12.0, *)
@@ -233,7 +226,7 @@ class SystemWebSocketTests: XCTestCase {
         let task = Task.detached {
             var count = 1
             repeat {
-                await self.subject.send(.message(.text(String(count))))
+                self.subject.send(.message(.text(String(count))))
                 count += 1
                 try await Task.sleep(nanoseconds: 20 * NSEC_PER_MSEC)
             } while !Task.isCancelled
@@ -263,7 +256,7 @@ class SystemWebSocketTests: XCTestCase {
         let task = Task.detached {
             var count = 1
             repeat {
-                await self.subject.send(.message(.text(String(count))))
+                self.subject.send(.message(.text(String(count))))
                 count += 1
                 try await Task.sleep(nanoseconds: 20 * NSEC_PER_MSEC)
             } while !Task.isCancelled
@@ -320,13 +313,14 @@ class SystemWebSocketTests: XCTestCase {
         // These two lines are redundant, but the goal
         // is to test everything in `WebSocket`.
         try await client.open()
-        await _fulfillment(of: [openEx], timeout: 2)
+        await fulfillment(of: [openEx], timeout: 2)
 
         // This message has to be sent after the `AsyncStream` is
         // subscribed to below.
         let messageToReceiveFromServer = messagesToReceiveFromServer[0]
         Task.detached {
-            await self.subject.send(.message(messageToReceiveFromServer))
+            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            self.subject.send(.message(messageToReceiveFromServer))
         }
 
         var messagesReceivedByClient = 0
@@ -347,7 +341,7 @@ class SystemWebSocketTests: XCTestCase {
         XCTAssertEqual(3, messagesReceivedByClient)
         XCTAssertEqual(3, messagesReceivedByServer)
 
-        await _fulfillment(of: [closeEx], timeout: 2)
+        await fulfillment(of: [closeEx], timeout: 2)
     }
 }
 
@@ -358,7 +352,11 @@ private let empty: Empty<WebSocketServerOutput, Error> = Empty(
 )
 
 private extension SystemWebSocketTests {
-    func url(_ port: Int) -> URL { URL(string: "ws://127.0.0.1:\(port)/socket")! }
+    func request(_ port: Int) -> URLRequest {
+        URLRequest(
+            url: URL(string: "ws://127.0.0.1:\(port)/socket")!
+        )
+    }
 
     func makeServerAndClient(
         onOpen: @escaping @Sendable () -> Void = {},
@@ -366,7 +364,7 @@ private extension SystemWebSocketTests {
     ) async throws -> (WebSocketServer, SystemWebSocket) {
         let server = try WebSocketServer(outputPublisher: subject)
         let client = try! await SystemWebSocket(
-            url: url(server.port),
+            request: request(server.port),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
@@ -380,7 +378,7 @@ private extension SystemWebSocketTests {
     ) async throws -> (WebSocketServer, SystemWebSocket) {
         let server = try WebSocketServer(outputPublisher: empty)
         let client = try! await SystemWebSocket(
-            url: url(19),
+            request: request(19),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
@@ -394,24 +392,11 @@ private extension SystemWebSocketTests {
     ) async throws -> (WebSocketServer, WebSocket) {
         let server = try WebSocketServer(outputPublisher: subject)
         let client = try! await SystemWebSocket(
-            url: url(server.port),
+            request: request(server.port),
             options: .init(timeoutIntervalForRequest: 2),
             onOpen: onOpen,
             onClose: onClose
         )
         return (server, try! await .system(client))
-    }
-}
-
-private extension SystemWebSocketTests {
-    func _fulfillment(
-        of expectations: [XCTestExpectation],
-        timeout seconds: TimeInterval
-    ) async {
-        #if compiler(>=5.8)
-            await fulfillment(of: expectations, timeout: seconds)
-        #else
-            wait(for: expectations, timeout: seconds)
-        #endif
     }
 }

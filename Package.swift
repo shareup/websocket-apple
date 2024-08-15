@@ -24,7 +24,7 @@ let package = Package(
         ),
         .package(
             url: "https://github.com/vapor/websocket-kit.git",
-            from: "2.14.0"
+            from: "2.15.0"
         ),
         .package(
             url: "https://github.com/apple/swift-nio.git",

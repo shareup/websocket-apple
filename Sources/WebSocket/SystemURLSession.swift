@@ -2,14 +2,14 @@ import Foundation
 import Synchronized
 
 func webSocketTask(
-    for url: URL,
+    for request: URLRequest,
     options: WebSocketOptions,
     onOpen: @escaping @Sendable () async -> Void,
     onClose: @escaping @Sendable (WebSocketCloseCode, Data?) async -> Void
 ) -> URLSessionWebSocketTask {
     let session = session(for: options)
 
-    let task = session.webSocketTask(with: url)
+    let task = session.webSocketTask(with: request)
     task.maximumMessageSize = options.maximumMessageSize
 
     let delegate = session.delegate as! Delegate

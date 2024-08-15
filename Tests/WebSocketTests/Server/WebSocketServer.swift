@@ -1,9 +1,6 @@
 import Combine
 import Foundation
 import NIO
-import NIOHTTP1
-import NIOSSL
-import NIOWebSocket
 import WebSocket
 import WebSocketKit
 
@@ -12,11 +9,8 @@ enum WebSocketServerOutput: Hashable {
     case remoteClose
 }
 
-private typealias WS = WebSocketKit.WebSocket
-
 final class WebSocketServer {
-    var port: Int { _port! }
-    private var _port: Int?
+    var port: Int { channel!.localAddress!.port! }
 
     let maximumMessageSize: Int
 
@@ -25,7 +19,7 @@ final class WebSocketServer {
     private let outputPublisher: AnyPublisher<WebSocketServerOutput, Error>
     private var outputPublisherSubscription: AnyCancellable?
 
-    // Publisher the repeats everything sent to it by clients.
+    // Publisher that repeats everything sent to it by clients.
     private let inputSubject = PassthroughSubject<WebSocketMessage, Never>()
 
     private let eventLoopGroup: EventLoopGroup
@@ -40,99 +34,54 @@ final class WebSocketServer {
 
         eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
 
-        channel = try makeWebSocket(
-            on: eventLoopGroup,
-            onUpgrade: onWebSocketUpgrade
-        )
-        .bind(to: SocketAddress(
-            ipAddress: "127.0.0.1",
-            port: 0 // random port
-        ))
-        .wait()
+        channel = try ServerBootstrap
+            .webSocket(on: eventLoopGroup) { [weak self] _, ws in
+                guard let self else { return }
+                subscribeToOutputPublisher(ws)
 
-        if let port = channel?.localAddress?.port {
-            _port = port
-        }
+                ws.onText { [weak self] _, text in
+                    self?.inputSubject.send(.text(text))
+                }
+                ws.onBinary { [weak self] _, binary in
+                    var binary = binary
+                    guard let data = binary.readData(
+                        length: binary.readableBytes,
+                        byteTransferStrategy: .copy
+                    ) else { return }
+                    self?.inputSubject.send(.data(data))
+                }
+            }.bind(host: "127.0.0.1", port: 0).wait()
     }
 
-    private func makeWebSocket(
-        on eventLoopGroup: EventLoopGroup,
-        onUpgrade: @escaping (HTTPRequestHead, WS) -> Void
-    ) -> ServerBootstrap {
-        ServerBootstrap(group: eventLoopGroup)
-            .serverChannelOption(
-                ChannelOptions.socket(SocketOptionLevel(SOL_SOCKET), SO_REUSEADDR),
-                value: 1
+    private func subscribeToOutputPublisher(_ ws: WebSocketKit.WebSocket) {
+        outputPublisherSubscription = outputPublisher
+            .sink(
+                receiveCompletion: { completion in
+                    switch completion {
+                    case .finished:
+                        _ = ws.close(code:)
+
+                    case .failure:
+                        _ = ws.close(code: .unexpectedServerError)
+                    }
+                },
+                receiveValue: { output in
+                    switch output {
+                    case .remoteClose:
+                        do { try ws.close(code: .goingAway).wait() }
+                        catch {}
+
+                    case let .message(message):
+                        switch message {
+                        case let .data(data):
+                            ws.send(raw: data, opcode: .binary)
+
+                        case let .text(text):
+                            ws.send(text)
+                        }
+                    }
+                }
             )
-            .childChannelInitializer { channel in
-                let ws = NIOWebSocketServerUpgrader(
-                    shouldUpgrade: { channel, _ in
-                        channel.eventLoop.makeSucceededFuture([:])
-                    },
-                    upgradePipelineHandler: { channel, req in
-                        WebSocket.server(on: channel) { ws in
-                            onUpgrade(req, ws)
-                        }
-                    }
-                )
-                return channel.pipeline.configureHTTPServerPipeline(
-                    withServerUpgrade: (
-                        upgraders: [ws],
-                        completionHandler: { _ in }
-                    )
-                )
-            }
-    }
-
-    private var onWebSocketUpgrade: (HTTPRequestHead, WS) -> Void {
-        { [weak self] (_: HTTPRequestHead, ws: WS) in
-            guard let self else { return }
-
-            let sub = outputPublisher
-                .sink(
-                    receiveCompletion: { completion in
-                        switch completion {
-                        case .finished:
-                            _ = ws.close(code:)
-
-                        case .failure:
-                            _ = ws.close(code: .unexpectedServerError)
-                        }
-                    },
-                    receiveValue: { output in
-                        switch output {
-                        case .remoteClose:
-                            do { try ws.close(code: .goingAway).wait() }
-                            catch {}
-
-                        case let .message(message):
-                            switch message {
-                            case let .data(data):
-                                ws.send(raw: data, opcode: .binary)
-
-                            case let .text(text):
-                                ws.send(text)
-                            }
-                        }
-                    }
-                )
-
-            outputPublisherSubscription = sub
-
-            ws.onText { [weak self] _, text in
-                self?.inputSubject.send(.text(text))
-            }
-
-            ws.onBinary { [weak self] _, buffer in
-                guard let self,
-                      let data = buffer.getData(
-                          at: buffer.readerIndex,
-                          length: buffer.readableBytes
-                      )
-                else { return }
-                inputSubject.send(.data(data))
-            }
-        }
     }
 
     func shutDown() {

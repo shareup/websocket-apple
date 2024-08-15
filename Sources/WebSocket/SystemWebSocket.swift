@@ -24,7 +24,8 @@ final actor SystemWebSocket: Publisher {
         return true
     } }
 
-    nonisolated let url: URL
+    nonisolated var url: URL { request.url! }
+    nonisolated let request: URLRequest
     nonisolated let options: WebSocketOptions
     nonisolated let onOpen: WebSocketOnOpen
     nonisolated let onClose: WebSocketOnClose
@@ -49,12 +50,12 @@ final actor SystemWebSocket: Publisher {
     )
 
     init(
-        url: URL,
+        request: URLRequest,
         options: WebSocketOptions = .init(),
         onOpen: @escaping WebSocketOnOpen = {},
         onClose: @escaping WebSocketOnClose = { _ in }
     ) async throws {
-        self.url = url
+        self.request = request
         self.options = options
         self.onOpen = onOpen
         self.onClose = onClose
@@ -180,7 +181,7 @@ private extension SystemWebSocket {
     func connect() throws {
         precondition(isUnopened)
         let task = webSocketTask(
-            for: url,
+            for: request,
             options: options,
             onOpen: { [weak self] in await self?.doOpen() },
             onClose: { [weak self] closeCode, reason async in
