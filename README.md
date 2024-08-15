@@ -49,3 +49,7 @@ try await socket.close()
 
 1. In your Terminal, navigate to the `websocket-apple` directory
 2. Run the tests using `swift test`
+
+## Notices
+
+This library includes code from [WebSocketKit](https://github.com/vapor/websocket-kit) and [SwiftNIO](https://github.com/apple/swift-nio), the use of which depends on their licenses.
