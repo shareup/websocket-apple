@@ -10,8 +10,7 @@ enum WebSocketServerOutput: Hashable {
 }
 
 final class WebSocketServer {
-    var port: Int { _port! }
-    private var _port: Int?
+    var port: Int { channel!.localAddress!.port! }
 
     let maximumMessageSize: Int
 
@@ -52,8 +51,6 @@ final class WebSocketServer {
                     self?.inputSubject.send(.data(data))
                 }
             }.bind(host: "localhost", port: 0).wait()
-
-        _port = channel!.localAddress!.port!
     }
 
     private func subscribeToOutputPublisher(_ ws: WebSocketKit.WebSocket) {
