@@ -73,27 +73,15 @@ public extension WebSocket {
 
     /// The WebSocket's received messages as an asynchronous stream.
     var messages: AsyncStream<WebSocketMessage> {
-        let cancellable = Locked<AnyCancellable?>(nil)
-
-        return AsyncStream { cont in
-            func finish() {
-                cancellable.access { cancellable in
-                    if cancellable != nil {
-                        cont.finish()
-                        cancellable = nil
-                    }
-                }
-            }
-
-            let _cancellable = self.messagesPublisher()
-                .handleEvents(receiveCancel: { finish() })
-                .sink(
-                    receiveCompletion: { _ in finish() },
-                    receiveValue: { cont.yield($0) }
-                )
-
-            cancellable.access { $0 = _cancellable }
-        }
+        let (stream, continuation) = AsyncStream<WebSocketMessage>.makeStream()
+        let cancellable = messagesPublisher()
+            .handleEvents(receiveCancel: { continuation.finish() })
+            .sink(
+                receiveCompletion: { _ in continuation.finish() },
+                receiveValue: { continuation.yield($0) }
+            )
+        continuation.onTermination = { @Sendable _ in cancellable.cancel() }
+        return stream
     }
 }
 
