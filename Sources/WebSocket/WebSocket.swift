@@ -80,7 +80,7 @@ public extension WebSocket {
                 receiveCompletion: { _ in continuation.finish() },
                 receiveValue: { continuation.yield($0) }
             )
-        continuation.onTermination = { @Sendable _ in cancellable.cancel() }
+        continuation.onTermination = { _ in cancellable.cancel() }
         return stream
     }
 }
