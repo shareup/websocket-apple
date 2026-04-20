@@ -1,4 +1,7 @@
+import AsyncExtensions
 import Combine
+import NIO
+import NIOWebSocket
 import Synchronized
 @testable import WebSocket
 import XCTest
@@ -40,7 +43,7 @@ class SystemWebSocketTests: XCTestCase {
             onOpen: { XCTFail("Should not have opened") },
             onClose: { close in
                 XCTAssertEqual(.abnormalClosure, close.code)
-                XCTAssertNil(close.reason)
+                XCTAssertNotNil(close.reason)
                 ex.fulfill()
             }
         )
@@ -50,6 +53,52 @@ class SystemWebSocketTests: XCTestCase {
 
         let isClosed = await client.isClosed
         XCTAssertTrue(isClosed)
+    }
+
+    func testOpenCancellationThrowsCancellationError() async throws {
+        let server = try HangingServer()
+        defer { server.shutDown() }
+
+        let client = try await SystemWebSocket(
+            request: request(server.port),
+            options: .init(timeoutIntervalForRequest: 5)
+        )
+
+        let openTask = Task {
+            try await client.open()
+        }
+
+        try await Task.sleep(nanoseconds: 50 * NSEC_PER_MSEC)
+        openTask.cancel()
+
+        switch await openTask.result {
+        case .success:
+            XCTFail("Expected `open()` to throw `CancellationError`")
+
+        case let .failure(error):
+            XCTAssertTrue(
+                error is CancellationError,
+                "Received wrong error: \(String(reflecting: error))"
+            )
+        }
+    }
+
+    func testOpenThrowsConnectionErrorWhenServerIsUnreachable() async throws {
+        let (server, client) = try await makeOfflineServerAndClient(
+            timeoutIntervalForRequest: 0.2
+        )
+        defer { server.shutDown() }
+
+        do {
+            try await client.open()
+            XCTFail("Should not have opened")
+        } catch is TimeoutError {
+            XCTFail("Should surface the connection failure instead of timing out")
+        } catch let error as WebSocketError {
+            XCTAssertEqual(.abnormalClosure, error.closeCode)
+        } catch {
+            XCTFail("Received wrong error: \(error)")
+        }
     }
 
     func _testErrorWhenRemoteCloses() async throws {
@@ -112,6 +161,53 @@ class SystemWebSocketTests: XCTestCase {
         }
 
         await fulfillment(of: [secondCloseEx], timeout: 0.1)
+    }
+
+    func testDelegateDoesNotReorderOpenAndCloseCallbacks() async throws {
+        let delegate = Delegate()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+
+        let task = session.webSocketTask(with: URL(string: "ws://127.0.0.1/socket")!)
+        let openStarted = AsyncThrowingFuture<Void>(timeout: 2)
+        let allowOpenToFinish = AsyncThrowingFuture<Void>(timeout: 2)
+        let records = Locked([String]())
+
+        delegate.set(
+            onOpen: {
+                records.access { $0.append("open-started") }
+                openStarted.resolve()
+                do { try await allowOpenToFinish.value }
+                catch { XCTFail() }
+                records.access { $0.append("open-finished") }
+            },
+            onClose: { _, _ in
+                records.access { $0.append("close") }
+            },
+            for: ObjectIdentifier(task)
+        )
+
+        delegate.urlSession(session, webSocketTask: task, didOpenWithProtocol: nil)
+        try await openStarted.value
+
+        delegate.urlSession(
+            session,
+            webSocketTask: task,
+            didCloseWith: .goingAway,
+            reason: nil
+        )
+
+        try await Task.sleep(nanoseconds: 10 * NSEC_PER_MSEC)
+        let eventsBeforeOpenFinishes = records.access { $0 }
+        XCTAssertEqual(["open-started"], eventsBeforeOpenFinishes)
+
+        allowOpenToFinish.resolve()
+        try await Task.sleep(nanoseconds: 10 * NSEC_PER_MSEC)
+        let eventsAfterOpenFinishes = records.access { $0 }
+        XCTAssertEqual(
+            ["open-started", "open-finished", "close"],
+            eventsAfterOpenFinishes
+        )
     }
 
     func testPushAndReceiveText() async throws {
@@ -338,9 +434,27 @@ class SystemWebSocketTests: XCTestCase {
             }
         }
 
+        await fulfillment(of: [closeEx], timeout: 2)
+
         XCTAssertEqual(3, messagesReceivedByClient)
         XCTAssertEqual(3, messagesReceivedByServer)
+    }
 
+    func testRemoteCloseReasonIsPassedToOnClose() async throws {
+        let closeEx = expectation(description: "Should expose the close reason")
+        let reason = Data("server said goodbye".utf8)
+
+        let (server, client) = try await makeServerAndClient(
+            onClose: { close in
+                XCTAssertEqual(.goingAway, close.code)
+                XCTAssertEqual(reason, close.reason)
+                closeEx.fulfill()
+            }
+        )
+        defer { server.shutDown() }
+
+        try await client.open()
+        subject.send(.remoteCloseWithReason(.goingAway, reason))
         await fulfillment(of: [closeEx], timeout: 2)
     }
 }
@@ -373,13 +487,14 @@ private extension SystemWebSocketTests {
     }
 
     func makeOfflineServerAndClient(
+        timeoutIntervalForRequest: TimeInterval = 2,
         onOpen: @escaping @Sendable () -> Void = {},
         onClose: @escaping @Sendable (WebSocketClose) -> Void = { _ in }
     ) async throws -> (WebSocketServer, SystemWebSocket) {
         let server = try WebSocketServer(outputPublisher: empty)
         let client = try! await SystemWebSocket(
             request: request(19),
-            options: .init(timeoutIntervalForRequest: 2),
+            options: .init(timeoutIntervalForRequest: timeoutIntervalForRequest),
             onOpen: onOpen,
             onClose: onClose
         )
@@ -398,5 +513,30 @@ private extension SystemWebSocketTests {
             onClose: onClose
         )
         return (server, try! await .system(client))
+    }
+}
+
+private final class HangingServer {
+    var port: Int { channel!.localAddress!.port! }
+
+    private let eventLoopGroup: EventLoopGroup
+    private var channel: Channel?
+
+    init() throws {
+        eventLoopGroup = MultiThreadedEventLoopGroup(numberOfThreads: 1)
+        channel = try ServerBootstrap(group: eventLoopGroup)
+            .serverChannelOption(ChannelOptions.backlog, value: 256)
+            .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .childChannelInitializer { channel in
+                channel.eventLoop.makeSucceededFuture(())
+            }
+            .childChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .bind(host: "127.0.0.1", port: 0)
+            .wait()
+    }
+
+    func shutDown() {
+        try? channel?.close(mode: .all).wait()
+        try? eventLoopGroup.syncShutdownGracefully()
     }
 }

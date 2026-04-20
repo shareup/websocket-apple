@@ -1,12 +1,14 @@
 import Combine
 import Foundation
 import NIO
+import NIOWebSocket
 import WebSocket
 import WebSocketKit
 
-enum WebSocketServerOutput: Hashable {
+enum WebSocketServerOutput {
     case message(WebSocketMessage)
     case remoteClose
+    case remoteCloseWithReason(WebSocketErrorCode, Data)
 }
 
 final class WebSocketServer {
@@ -70,6 +72,15 @@ final class WebSocketServer {
                     case .remoteClose:
                         do { try ws.close(code: .goingAway).wait() }
                         catch {}
+
+                    case let .remoteCloseWithReason(code, reason):
+                        var buffer = ByteBufferAllocator().buffer(capacity: 2 + reason.count)
+                        buffer.write(webSocketErrorCode: code)
+                        buffer.writeBytes(reason)
+                        ws.send(
+                            raw: buffer.readableBytesView,
+                            opcode: .connectionClose
+                        )
 
                     case let .message(message):
                         switch message {
