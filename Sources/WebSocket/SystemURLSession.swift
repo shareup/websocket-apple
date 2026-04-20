@@ -53,21 +53,30 @@ private func configuration(with options: WebSocketOptions) -> URLSessionConfigur
     return config
 }
 
-private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
+final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     private struct Callbacks: Sendable {
         let onOpen: @Sendable () async -> Void
         let onClose: @Sendable (WebSocketCloseCode, Data?) async -> Void
     }
 
-    // `Dictionary<ObjectIdentifier(URLWebSocketTask): Callbacks>`
-    private let state: Locked<[ObjectIdentifier: Callbacks]> = .init([:])
+    private struct State: Sendable {
+        var callbacks: [ObjectIdentifier: Callbacks] = [:]
+        var callbackTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    }
+
+    private let state = Locked(State())
 
     func set(
         onOpen: @escaping @Sendable () async -> Void,
         onClose: @escaping @Sendable (WebSocketCloseCode, Data?) async -> Void,
         for taskID: ObjectIdentifier
     ) {
-        state.access { $0[taskID] = .init(onOpen: onOpen, onClose: onClose) }
+        state.access { state in
+            state.callbacks[taskID] = .init(
+                onOpen: onOpen,
+                onClose: onClose
+            )
+        }
     }
 
     func urlSession(
@@ -76,9 +85,8 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
         didOpenWithProtocol _: String?
     ) {
         let taskID = ObjectIdentifier(webSocketTask)
-
-        if let onOpen = state.access({ $0[taskID]?.onOpen }) {
-            Task { await onOpen() }
+        enqueue(for: taskID) { callbacks in
+            await callbacks.onOpen()
         }
     }
 
@@ -89,9 +97,8 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
         reason: Data?
     ) {
         let taskID = ObjectIdentifier(webSocketTask)
-
-        if let onClose = state.access({ $0[taskID]?.onClose }) {
-            Task { await onClose(WebSocketCloseCode(closeCode), reason) }
+        enqueue(for: taskID) { callbacks in
+            await callbacks.onClose(WebSocketCloseCode(closeCode), reason)
         }
     }
 
@@ -101,20 +108,36 @@ private final class Delegate: NSObject, URLSessionWebSocketDelegate, Sendable {
         didCompleteWithError error: Error?
     ) {
         let taskID = ObjectIdentifier(task)
+        let closeCode: WebSocketCloseCode = error == nil ? .normalClosure : .abnormalClosure
+        let reason = error.map { Data($0.localizedDescription.utf8) }
+        enqueue(for: taskID, removeAfterwards: true) { callbacks in
+            await callbacks.onClose(closeCode, reason)
+        }
+    }
 
-        if let onClose = state.access({ $0[taskID]?.onClose }) {
-            Task { [weak self] in
-                if let error {
-                    await onClose(
-                        .abnormalClosure,
-                        Data(error.localizedDescription.utf8)
-                    )
-                } else {
-                    await onClose(.normalClosure, nil)
-                }
-
-                self?.state.access { _ = $0.removeValue(forKey: taskID) }
+    private func enqueue(
+        for taskID: ObjectIdentifier,
+        removeAfterwards: Bool = false,
+        _ operation: @escaping @Sendable (Callbacks) async -> Void
+    ) {
+        state.access { state in
+            guard let callbacks = state.callbacks[taskID] else {
+                return
             }
+
+            let previousTask = state.callbackTasks[taskID]
+            let task = Task { [weak self] in
+                _ = await previousTask?.result
+                await operation(callbacks)
+
+                guard removeAfterwards else { return }
+                self?.state.access { state in
+                    _ = state.callbacks.removeValue(forKey: taskID)
+                    _ = state.callbackTasks.removeValue(forKey: taskID)
+                }
+            }
+
+            state.callbackTasks[taskID] = task
         }
     }
 }

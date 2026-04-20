@@ -86,7 +86,7 @@ final actor SystemWebSocket: Publisher {
             do {
                 try await didOpen.value
             } catch is CancellationError {
-                doClose(closeCode: .cancelled, reason: Data("cancelled".utf8))
+                throw CancellationError()
             } catch is TimeoutError {
                 doClose(closeCode: .timeout, reason: Data("timeout".utf8))
                 throw TimeoutError()
@@ -250,9 +250,12 @@ private extension SystemWebSocket {
     }
 
     func doClose(closeCode: WebSocketCloseCode, reason: Data?) {
+        let close = WebSocketClose(closeCode, reason)
+        didOpen.fail(WebSocketError(closeCode, reason))
+
         switch state {
         case .unopened:
-            state = .closed(.init(closeCode, reason))
+            state = .closed(close)
 
         case let .connecting(ws), let .open(ws):
             os_log(
@@ -271,7 +274,6 @@ private extension SystemWebSocket {
                 }
             }
 
-            let close = WebSocketClose(closeCode, nil)
             state = .closed(close)
             onClose(close)
             didClose?.resolve((code: closeCode, reason: reason))
