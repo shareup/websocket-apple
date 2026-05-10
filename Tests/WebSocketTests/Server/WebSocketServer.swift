@@ -7,6 +7,7 @@ import WebSocketKit
 
 enum WebSocketServerOutput {
     case message(WebSocketMessage)
+    case ping(Data)
     case remoteClose
     case remoteCloseWithReason(WebSocketErrorCode, Data)
 }
@@ -23,6 +24,7 @@ final class WebSocketServer {
 
     // Publisher that repeats everything sent to it by clients.
     private let inputSubject = PassthroughSubject<WebSocketMessage, Never>()
+    private let pongSubject = PassthroughSubject<Data, Never>()
 
     private let eventLoopGroup: EventLoopGroup
     private var channel: Channel?
@@ -52,6 +54,14 @@ final class WebSocketServer {
                     ) else { return }
                     self?.inputSubject.send(.data(data))
                 }
+                ws.onPong { [weak self] _, pong in
+                    var pong = pong
+                    guard let data = pong.readData(
+                        length: pong.readableBytes,
+                        byteTransferStrategy: .copy
+                    ) else { return }
+                    self?.pongSubject.send(data)
+                }
             }.bind(host: "127.0.0.1", port: 0).wait()
     }
 
@@ -69,6 +79,9 @@ final class WebSocketServer {
                 },
                 receiveValue: { output in
                     switch output {
+                    case let .ping(data):
+                        ws.sendPing(data)
+
                     case .remoteClose:
                         do { try ws.close(code: .goingAway).wait() }
                         catch {}
@@ -102,5 +115,9 @@ final class WebSocketServer {
 
     var inputPublisher: AnyPublisher<WebSocketMessage, Never> {
         inputSubject.eraseToAnyPublisher()
+    }
+
+    var pongPublisher: AnyPublisher<Data, Never> {
+        pongSubject.eraseToAnyPublisher()
     }
 }

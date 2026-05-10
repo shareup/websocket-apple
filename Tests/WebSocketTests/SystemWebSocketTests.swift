@@ -160,7 +160,7 @@ class SystemWebSocketTests: XCTestCase {
             else { return XCTFail("Received wrong error: \(error)") }
         }
 
-        await fulfillment(of: [secondCloseEx], timeout: 0.1)
+        await fulfillment(of: [secondCloseEx], timeout: 0.05)
     }
 
     func testDelegateDoesNotReorderOpenAndCloseCallbacks() async throws {
@@ -290,6 +290,81 @@ class SystemWebSocketTests: XCTestCase {
         await fulfillment(of: [sentEx], timeout: 2)
         subject.send(.message(.data(Data("hi, to you too!".utf8))))
         await fulfillment(of: [receivedEx], timeout: 2)
+    }
+
+    func testServerPingReceivesPongAndDoesNotCloseClient() async throws {
+        let closeEx = expectation(description: "Should not close after ping")
+        closeEx.isInverted = true
+        let shouldFailOnClose = Locked(true)
+
+        let (server, client) = try await makeServerAndClient(
+            onClose: { _ in
+                guard shouldFailOnClose.access({ $0 }) else { return }
+                closeEx.fulfill()
+            }
+        )
+        defer { server.shutDown() }
+
+        let pingPayload = Data("server ping".utf8)
+        let pongEx = expectation(description: "Server should receive pong")
+        let pongSub = server.pongPublisher
+            .sink { pong in
+                XCTAssertEqual(pingPayload, pong)
+                pongEx.fulfill()
+            }
+        defer { pongSub.cancel() }
+
+        let readyEx = expectation(description: "Should receive initial app message")
+        let receivedEx = expectation(description: "Should still receive app messages")
+        let receivedSub = client.sink { message in
+            guard case let .text(text) = message else {
+                return XCTFail("Should have received text")
+            }
+
+            switch text {
+            case "ready":
+                readyEx.fulfill()
+
+            case "still open":
+                receivedEx.fulfill()
+
+            default:
+                XCTFail("Received unexpected text: \(text)")
+            }
+        }
+        defer { receivedSub.cancel() }
+
+        let sentEx = expectation(description: "Server should receive client message")
+        let sentSub = server.inputPublisher
+            .sink { message in
+                guard case let .text(text) = message else {
+                    return XCTFail("Should have received text")
+                }
+                XCTAssertEqual("client ready", text)
+                sentEx.fulfill()
+            }
+        defer { sentSub.cancel() }
+
+        try await client.open()
+
+        try await client.send(.text("client ready"))
+        await fulfillment(of: [sentEx], timeout: 2)
+
+        subject.send(.message(.text("ready")))
+        await fulfillment(of: [readyEx], timeout: 2)
+
+        subject.send(.ping(pingPayload))
+        await fulfillment(of: [pongEx], timeout: 2)
+
+        let isOpen = await client.isOpen
+        XCTAssertTrue(isOpen)
+
+        subject.send(.message(.text("still open")))
+        await fulfillment(of: [receivedEx], timeout: 2)
+        await fulfillment(of: [closeEx], timeout: 0.05)
+
+        shouldFailOnClose.access { $0 = false }
+        try await client.close()
     }
 
     @available(iOS 15.0, macOS 12.0, *)
